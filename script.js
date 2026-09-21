@@ -129,18 +129,31 @@ leiturasRef.on('value', (snapshot) => {
   }
 });
 
-// --- SIMULADOR DE TESTE (Para rodar sem o ESP32) ---
-function simularLeituraESP32() {
+// Este código cria o nó /leituras automaticamente no Firebase
+function criarPrimeiroNo() {
+  database.ref('leituras').push({
+    sensor_1: 25.5,
+    sensor_2: 60.0,
+    timestamp: firebase.database.ServerValue.TIMESTAMP
+  });
+}
+
+// Executa uma vez assim que a página abre
+criarPrimeiroNo();
+
+// --- SIMULADOR DE TESTE WEB ---
+function enviarLeituraSimulada() {
   const leituraFicticia = {
-    sensor_1: parseFloat((20 + Math.random() * 15).toFixed(1)), // Gera temp entre 20 e 35
-    sensor_2: parseFloat((40 + Math.random() * 40).toFixed(1)), // Gera umidade entre 40 e 80
+    sensor_1: parseFloat((20 + Math.random() * 15).toFixed(1)), // Simula valor entre 20 e 35
+    sensor_2: parseFloat((40 + Math.random() * 40).toFixed(1)), // Simula valor entre 40 e 80
     timestamp: firebase.database.ServerValue.TIMESTAMP
   };
 
-  database.ref('leituras').push(leituraFicticia);
+  // Envia diretamente para o nó /leituras
+  database.ref('leituras').push(leituraFicticia)
+    .then(() => console.log("Dado simulado enviado!"))
+    .catch((err) => console.error("Erro ao enviar:", err));
 }
 
-// Inicia simulação automática a cada 3 segundos
-let intervaloSimulacao = setInterval(simularLeituraESP32, 3000);
-
-console.log("Simulador ativo! Dados fictícios sendo enviados a cada 3s.");
+// Envia uma nova leitura simulada a cada 3 segundos
+setInterval(enviarLeituraSimulada, 3000);
