@@ -3,38 +3,33 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Monimotor</title>
+  <title>MoniMotor</title>
   
-
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
-  
+  <!-- Estilo Customizado -->
   <link rel="stylesheet" href="style.css">
 
-  <!--Chart.js-->
+  <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
 
   <div class="dashboard-container">
-
     <header class="header">
       <div>
-        <h1>Monimotor</h1>
-        <p class="subtitle">Monitoramento em Tempo Real via Firebase</p>
+        <h1>MoniMotor</h1>
+        <p class="subtitle">Monitorização em Tempo Real via Firebase</p>
       </div>
       <div id="status-badge" class="badge offline">
-        <span class="status-dot"></span> <span id="status-text">Desconectado</span>
+        <span class="status-dot"></span>
+        <span id="status-text">Desconectado</span>
       </div>
     </header>
 
-    <!--KPIs-->
     <section class="cards-grid">
       <div class="card card-primary">
         <div class="card-header">
           <span class="card-title">Sensor 1</span>
-          <span class="card-unit">Unidade / Val</span>
+          <span class="card-unit">Val</span>
         </div>
         <div class="card-value" id="val-sensor1">--</div>
         <div class="card-footer">Última atualização: <span id="time-sensor1">--:--:--</span></div>
@@ -43,18 +38,17 @@
       <div class="card card-success">
         <div class="card-header">
           <span class="card-title">Sensor 2</span>
-          <span class="card-unit">Unidade / Val</span>
+          <span class="card-unit">Val</span>
         </div>
         <div class="card-value" id="val-sensor2">--</div>
         <div class="card-footer">Última atualização: <span id="time-sensor2">--:--:--</span></div>
       </div>
     </section>
 
-    <!-- Seção do Gráfico -->
     <section class="chart-section">
       <div class="chart-header">
         <h2>Histórico de Leituras</h2>
-        <span class="chart-info">Mostrando últimas 20 amostras</span>
+        <span class="chart-info">A mostrar as últimas 20 amostras</span>
       </div>
       <div class="chart-wrapper">
         <canvas id="graficoLeituras"></canvas>
@@ -62,11 +56,11 @@
     </section>
   </div>
 
-  <!--SDKs do Firebase v9-->
+  <!-- SDKs Compatíveis do Firebase v9 -->
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-  
-  <!-- Script Principal da Aplicação -->
+
+  <!-- Script Principal de Conexão -->
   <script src="app.js"></script>
 </body>
 </html>
