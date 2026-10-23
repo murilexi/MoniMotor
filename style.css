@@ -8,6 +8,7 @@
   
   --primary-color: #38bdf8;
   --success-color: #4ade80;
+  --warning-color: #facc15;
   --danger-color: #f87171;
   --font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
@@ -27,7 +28,7 @@ body {
 }
 
 .dashboard-container {
-  max-width: 1100px;
+  max-width: 1200px;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
@@ -96,7 +97,7 @@ body {
 /* Grelha dos Cartões (KPIs) */
 .cards-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 1.5rem;
 }
 
@@ -137,13 +138,15 @@ body {
 }
 
 .card-value {
-  font-size: 2.5rem;
+  font-size: 2.2rem;
   font-weight: 700;
   letter-spacing: -1px;
 }
 
 .card-primary .card-value { color: var(--primary-color); }
 .card-success .card-value { color: var(--success-color); }
+.card-warning .card-value { color: var(--warning-color); }
+.card-danger .card-value { color: var(--danger-color); }
 
 .card-footer {
   font-size: 0.8rem;

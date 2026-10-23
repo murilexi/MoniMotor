@@ -29,7 +29,7 @@ function monitorarStatusConexao() {
       console.log("🟢 [FIREBASE]: Conexão estabelecida com sucesso!");
       atualizarStatusUI(true);
     } else {
-      console.warn("🔴 [FIREBASE]: Desconectado do servidor. Tentando reconectar...");
+      console.warn("🔴 [FIREBASE]: Desconectado do servidor.");
       atualizarStatusUI(false);
     }
   });
@@ -54,31 +54,9 @@ monitorarStatusConexao();
 
 
 // ==============================================================================
-// MÓDULO 3: FUNÇÃO DE ESCRITA NO BANCO (PLUG PERMANENTE)
+// MÓDULO 3: GRÁFICO MULTI-SENSOR COM CHART.JS
 // ==============================================================================
 
-function gravarLeituraNoBanco(sensor1, sensor2) {
-  const novoRegistro = {
-    sensor_1: sensor1,
-    sensor_2: sensor2,
-    timestamp: firebase.database.ServerValue.TIMESTAMP
-  };
-
-  return database.ref('leituras').push(novoRegistro)
-    .then((ref) => {
-      console.log(`✅ [BANCO DE DADOS]: Dado gravado com sucesso! Chave: ${ref.key}`);
-    })
-    .catch((error) => {
-      console.error("❌ [ERRO DE ESCRITA]: Falha ao gravar no Firebase:", error.message);
-    });
-}
-
-
-// ==============================================================================
-// MÓDULO 4: GRÁFICO E LEITURA DOS DADOS EM TEMPO REAL
-// ==============================================================================
-
-// Inicialização do Chart.js
 const ctx = document.getElementById('graficoLeituras').getContext('2d');
 const grafico = new Chart(ctx, {
   type: 'line',
@@ -86,21 +64,39 @@ const grafico = new Chart(ctx, {
     labels: [],
     datasets: [
       {
-        label: 'Sensor 1',
+        label: 'Temperatura (°C)',
         data: [],
         borderColor: '#38bdf8',
-        backgroundColor: 'rgba(56, 189, 248, 0.1)',
+        backgroundColor: 'rgba(56, 189, 248, 0.05)',
         borderWidth: 2,
-        fill: true,
+        fill: false,
         tension: 0.3
       },
       {
-        label: 'Sensor 2',
+        label: 'RPM',
         data: [],
         borderColor: '#4ade80',
-        backgroundColor: 'rgba(74, 222, 128, 0.1)',
+        backgroundColor: 'rgba(74, 222, 128, 0.05)',
         borderWidth: 2,
-        fill: true,
+        fill: false,
+        tension: 0.3
+      },
+      {
+        label: 'Corrente (A)',
+        data: [],
+        borderColor: '#facc15',
+        backgroundColor: 'rgba(250, 204, 21, 0.05)',
+        borderWidth: 2,
+        fill: false,
+        tension: 0.3
+      },
+      {
+        label: 'Aceleração Z',
+        data: [],
+        borderColor: '#f87171',
+        backgroundColor: 'rgba(248, 113, 113, 0.05)',
+        borderWidth: 2,
+        fill: false,
         tension: 0.3
       }
     ]
@@ -109,27 +105,20 @@ const grafico = new Chart(ctx, {
     responsive: true,
     maintainAspectRatio: false,
     scales: {
-      x: {
-        grid: { color: '#334155' },
-        ticks: { color: '#94a3b8' }
-      },
-      y: {
-        grid: { color: '#334155' },
-        ticks: { color: '#94a3b8' }
-      }
+      x: { grid: { color: '#334155' }, ticks: { color: '#94a3b8' } },
+      y: { grid: { color: '#334155' }, ticks: { color: '#94a3b8' } }
     },
     plugins: {
-      legend: {
-        labels: { color: '#f8fafc' }
-      }
+      legend: { labels: { color: '#f8fafc' } }
     }
   }
 });
 
-/**
- * Escuta o nó /leituras no Firebase. Sempre que um novo dado for adicionado
- * (pelo simulador agora ou pelo ESP32 no futuro), a tela atualiza instantaneamente.
- */
+
+// ==============================================================================
+// MÓDULO 4: ESCUTAR DADOS DO ESP32 EM TEMPO REAL
+// ==============================================================================
+
 function escutarLeiturasEmTempoReal() {
   const leiturasRef = database.ref('leituras').limitToLast(20);
 
@@ -138,8 +127,10 @@ function escutarLeiturasEmTempoReal() {
     if (!dados) return;
 
     const labels = [];
-    const dadosSensor1 = [];
-    const dadosSensor2 = [];
+    const arrTemp = [];
+    const arrRpm = [];
+    const arrCorrente = [];
+    const arrAcel = [];
     let ultimoDado = null;
 
     Object.keys(dados).forEach((key) => {
@@ -149,51 +140,38 @@ function escutarLeiturasEmTempoReal() {
         : '--:--:--';
 
       labels.push(horaFormatada);
-      dadosSensor1.push(item.sensor_1);
-      dadosSensor2.push(item.sensor_2);
+      arrTemp.push(item.temperatura || 0);
+      arrRpm.push(item.rpm || 0);
+      arrCorrente.push(item.corrente || 0);
+      arrAcel.push(item.acel_z || 0);
+
       ultimoDado = { ...item, hora: horaFormatada };
     });
 
-    // 1. Atualiza os dados do gráfico
+    // 1. Atualiza o Gráfico
     grafico.data.labels = labels;
-    grafico.data.datasets[0].data = dadosSensor1;
-    grafico.data.datasets[1].data = dadosSensor2;
+    grafico.data.datasets[0].data = arrTemp;
+    grafico.data.datasets[1].data = arrRpm;
+    grafico.data.datasets[2].data = arrCorrente;
+    grafico.data.datasets[3].data = arrAcel;
     grafico.update();
 
-    // 2. Atualiza os valores dos cards superiores
+    // 2. Atualiza os Cartões Superiores
     if (ultimoDado) {
-      const elValS1 = document.getElementById('val-sensor1');
-      const elTimeS1 = document.getElementById('time-sensor1');
-      const elValS2 = document.getElementById('val-sensor2');
-      const elTimeS2 = document.getElementById('time-sensor2');
+      document.getElementById('val-temp').innerText = ultimoDado.temperatura !== undefined ? ultimoDado.temperatura.toFixed(1) : '--';
+      document.getElementById('time-temp').innerText = ultimoDado.hora;
 
-      if (elValS1) elValS1.innerText = ultimoDado.sensor_1;
-      if (elTimeS1) elTimeS1.innerText = ultimoDado.hora;
-      if (elValS2) elValS2.innerText = ultimoDado.sensor_2;
-      if (elTimeS2) elTimeS2.innerText = ultimoDado.hora;
+      document.getElementById('val-rpm').innerText = ultimoDado.rpm !== undefined ? ultimoDado.rpm : '--';
+      document.getElementById('time-rpm').innerText = ultimoDado.hora;
+
+      document.getElementById('val-corrente').innerText = ultimoDado.corrente !== undefined ? ultimoDado.corrente.toFixed(2) : '--';
+      document.getElementById('time-corrente').innerText = ultimoDado.hora;
+
+      document.getElementById('val-acel').innerText = ultimoDado.acel_z !== undefined ? ultimoDado.acel_z.toFixed(1) : '--';
+      document.getElementById('time-acel').innerText = ultimoDado.hora;
     }
   });
 }
 
-// Inicia a escuta em tempo real
+// Inicia a escuta
 escutarLeiturasEmTempoReal();
-
-
-// ==============================================================================
-// MÓDULO 5: GERADOR DE DADOS SIMULADOS
-// ==============================================================================
-
-let temporizadorSimulacao = null;
-
-function iniciarSimulacao() {
-  console.log("🚀 [SIMULADOR]: Gerador temporário iniciado (envio a cada 3s)...");
-
-  temporizadorSimulacao = setInterval(() => {
-    const tempSimulada = parseFloat((21 + Math.random() * 8).toFixed(1));
-    const umidSimulada = parseFloat((50 + Math.random() * 20).toFixed(1));
-
-    gravarLeituraNoBanco(tempSimulada, umidSimulada);
-  }, 3000);
-}
-
-iniciarSimulacao();

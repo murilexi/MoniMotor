@@ -25,29 +25,53 @@
       </div>
     </header>
 
+    <!-- Cards de Indicadores (KPIs) -->
     <section class="cards-grid">
+      <!-- Temperatura -->
       <div class="card card-primary">
         <div class="card-header">
-          <span class="card-title">Sensor 1</span>
-          <span class="card-unit">Val</span>
+          <span class="card-title">Temperatura</span>
+          <span class="card-unit">°C</span>
         </div>
-        <div class="card-value" id="val-sensor1">--</div>
-        <div class="card-footer">Última atualização: <span id="time-sensor1">--:--:--</span></div>
+        <div class="card-value" id="val-temp">--</div>
+        <div class="card-footer">Última atualização: <span id="time-temp">--:--:--</span></div>
       </div>
 
+      <!-- RPM -->
       <div class="card card-success">
         <div class="card-header">
-          <span class="card-title">Sensor 2</span>
-          <span class="card-unit">Val</span>
+          <span class="card-title">Rotação</span>
+          <span class="card-unit">RPM</span>
         </div>
-        <div class="card-value" id="val-sensor2">--</div>
-        <div class="card-footer">Última atualização: <span id="time-sensor2">--:--:--</span></div>
+        <div class="card-value" id="val-rpm">--</div>
+        <div class="card-footer">Última atualização: <span id="time-rpm">--:--:--</span></div>
+      </div>
+
+      <!-- Corrente -->
+      <div class="card card-warning">
+        <div class="card-header">
+          <span class="card-title">Corrente</span>
+          <span class="card-unit">A</span>
+        </div>
+        <div class="card-value" id="val-corrente">--</div>
+        <div class="card-footer">Última atualização: <span id="time-corrente">--:--:--</span></div>
+      </div>
+
+      <!-- Aceleração Z (Vibração) -->
+      <div class="card card-danger">
+        <div class="card-header">
+          <span class="card-title">Vibração (Acel. Z)</span>
+          <span class="card-unit">m/s²</span>
+        </div>
+        <div class="card-value" id="val-acel">--</div>
+        <div class="card-footer">Última atualização: <span id="time-acel">--:--:--</span></div>
       </div>
     </section>
 
+    <!-- Seção do Gráfico -->
     <section class="chart-section">
       <div class="chart-header">
-        <h2>Histórico de Leituras</h2>
+        <h2>Histórico de Leituras Multi-Sensor</h2>
         <span class="chart-info">A mostrar as últimas 20 amostras</span>
       </div>
       <div class="chart-wrapper">
