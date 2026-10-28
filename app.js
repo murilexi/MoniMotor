@@ -25,13 +25,8 @@ function monitorarStatusConexao() {
   const connectedRef = database.ref('.info/connected');
   
   connectedRef.on('value', (snap) => {
-    if (snap.val() === true) {
-      console.log("🟢 [FIREBASE]: Conexão estabelecida com sucesso!");
-      atualizarStatusUI(true);
-    } else {
-      console.warn("🔴 [FIREBASE]: Desconectado do servidor.");
-      atualizarStatusUI(false);
-    }
+    const isOnline = snap.val() === true;
+    atualizarStatusUI(isOnline);
   });
 }
 
@@ -41,7 +36,7 @@ function atualizarStatusUI(isOnline) {
   
   if (statusEl && badgeEl) {
     if (isOnline) {
-      statusEl.innerText = "Conectado ao Firebase";
+      statusEl.innerText = "Online";
       badgeEl.className = "badge online";
     } else {
       statusEl.innerText = "Desconectado";
@@ -68,36 +63,40 @@ const grafico = new Chart(ctx, {
         data: [],
         borderColor: '#38bdf8',
         backgroundColor: 'rgba(56, 189, 248, 0.05)',
-        borderWidth: 2,
-        fill: false,
-        tension: 0.3
+        borderWidth: 2.5,
+        fill: true,
+        tension: 0.35,
+        pointRadius: 2
       },
       {
         label: 'RPM',
         data: [],
-        borderColor: '#4ade80',
-        backgroundColor: 'rgba(74, 222, 128, 0.05)',
-        borderWidth: 2,
-        fill: false,
-        tension: 0.3
+        borderColor: '#34d399',
+        backgroundColor: 'rgba(52, 211, 153, 0.05)',
+        borderWidth: 2.5,
+        fill: true,
+        tension: 0.35,
+        pointRadius: 2
       },
       {
         label: 'Corrente (A)',
         data: [],
-        borderColor: '#facc15',
-        backgroundColor: 'rgba(250, 204, 21, 0.05)',
-        borderWidth: 2,
-        fill: false,
-        tension: 0.3
+        borderColor: '#fbbf24',
+        backgroundColor: 'rgba(251, 191, 36, 0.05)',
+        borderWidth: 2.5,
+        fill: true,
+        tension: 0.35,
+        pointRadius: 2
       },
       {
         label: 'Aceleração Z',
         data: [],
         borderColor: '#f87171',
         backgroundColor: 'rgba(248, 113, 113, 0.05)',
-        borderWidth: 2,
-        fill: false,
-        tension: 0.3
+        borderWidth: 2.5,
+        fill: true,
+        tension: 0.35,
+        pointRadius: 2
       }
     ]
   },
@@ -105,11 +104,19 @@ const grafico = new Chart(ctx, {
     responsive: true,
     maintainAspectRatio: false,
     scales: {
-      x: { grid: { color: '#334155' }, ticks: { color: '#94a3b8' } },
-      y: { grid: { color: '#334155' }, ticks: { color: '#94a3b8' } }
+      x: { 
+        grid: { color: 'rgba(51, 65, 85, 0.3)' }, 
+        ticks: { color: '#64748b', font: { family: 'JetBrains Mono', size: 11 } } 
+      },
+      y: { 
+        grid: { color: 'rgba(51, 65, 85, 0.3)' }, 
+        ticks: { color: '#64748b', font: { family: 'JetBrains Mono', size: 11 } } 
+      }
     },
     plugins: {
-      legend: { labels: { color: '#f8fafc' } }
+      legend: { 
+        labels: { color: '#f1f5f9', font: { family: 'Inter', size: 12 } } 
+      }
     }
   }
 });
@@ -136,16 +143,22 @@ function escutarLeiturasEmTempoReal() {
     Object.keys(dados).forEach((key) => {
       const item = dados[key];
       const horaFormatada = item.timestamp
-        ? new Date(item.timestamp).toLocaleTimeString('pt-BR')
+        ? new Date(Number(item.timestamp)).toLocaleTimeString('pt-BR')
         : '--:--:--';
 
       labels.push(horaFormatada);
-      arrTemp.push(item.temperatura || 0);
-      arrRpm.push(item.rpm || 0);
-      arrCorrente.push(item.corrente || 0);
-      arrAcel.push(item.acel_z || 0);
+      arrTemp.push(item.temperatura ?? 0);
+      arrRpm.push(item.rpm ?? 0);
+      arrCorrente.push(item.corrente ?? 0);
+      arrAcel.push(item.vibracao_pico_z ?? item.acel_z ?? 0);
 
-      ultimoDado = { ...item, hora: horaFormatada };
+      ultimoDado = { 
+        temperatura: item.temperatura,
+        rpm: item.rpm,
+        corrente: item.corrente,
+        acel: item.vibracao_pico_z ?? item.acel_z,
+        hora: horaFormatada 
+      };
     });
 
     // 1. Atualiza o Gráfico
@@ -156,18 +169,18 @@ function escutarLeiturasEmTempoReal() {
     grafico.data.datasets[3].data = arrAcel;
     grafico.update();
 
-    // 2. Atualiza os Cartões Superiores
+    // 2. Atualiza os Cartões Superiores com segurança
     if (ultimoDado) {
-      document.getElementById('val-temp').innerText = ultimoDado.temperatura !== undefined ? ultimoDado.temperatura.toFixed(1) : '--';
+      document.getElementById('val-temp').innerText = ultimoDado.temperatura !== undefined ? Number(ultimoDado.temperatura).toFixed(1) : '--';
       document.getElementById('time-temp').innerText = ultimoDado.hora;
 
       document.getElementById('val-rpm').innerText = ultimoDado.rpm !== undefined ? ultimoDado.rpm : '--';
       document.getElementById('time-rpm').innerText = ultimoDado.hora;
 
-      document.getElementById('val-corrente').innerText = ultimoDado.corrente !== undefined ? ultimoDado.corrente.toFixed(2) : '--';
+      document.getElementById('val-corrente').innerText = ultimoDado.corrente !== undefined ? Number(ultimoDado.corrente).toFixed(2) : '--';
       document.getElementById('time-corrente').innerText = ultimoDado.hora;
 
-      document.getElementById('val-acel').innerText = ultimoDado.acel_z !== undefined ? ultimoDado.acel_z.toFixed(1) : '--';
+      document.getElementById('val-acel').innerText = ultimoDado.acel !== undefined ? Number(ultimoDado.acel).toFixed(2) : '--';
       document.getElementById('time-acel').innerText = ultimoDado.hora;
     }
   });

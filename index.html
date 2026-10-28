@@ -3,7 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MoniMotor</title>
+  <title>MoniMotor | Dashboard IoT</title>
+  
+  <!-- Google Fonts: Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
   
   <!-- Estilo Customizado -->
   <link rel="stylesheet" href="style.css">
@@ -17,7 +22,7 @@
     <header class="header">
       <div>
         <h1>MoniMotor</h1>
-        <p class="subtitle">Monitorização em Tempo Real via Firebase</p>
+        <p class="subtitle">Monitorização Industrial em Tempo Real</p>
       </div>
       <div id="status-badge" class="badge offline">
         <span class="status-dot"></span>
@@ -57,7 +62,7 @@
         <div class="card-footer">Última atualização: <span id="time-corrente">--:--:--</span></div>
       </div>
 
-      <!-- Aceleração Z (Vibração) -->
+      <!-- Vibração (Aceleração Z) -->
       <div class="card card-danger">
         <div class="card-header">
           <span class="card-title">Vibração (Acel. Z)</span>
@@ -72,7 +77,7 @@
     <section class="chart-section">
       <div class="chart-header">
         <h2>Histórico de Leituras Multi-Sensor</h2>
-        <span class="chart-info">A mostrar as últimas 20 amostras</span>
+        <span class="chart-info">Últimas 20 amostras</span>
       </div>
       <div class="chart-wrapper">
         <canvas id="graficoLeituras"></canvas>
@@ -84,7 +89,7 @@
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 
-  <!-- Script Principal de Conexão -->
+  <!-- Script Principal -->
   <script src="app.js"></script>
 </body>
 </html>
