@@ -3,17 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MoniMotor | Diagnóstico Preditivo IoT</title>
+  <title>MoniMotor</title>
   
-  <!-- Google Fonts: Inter & JetBrains Mono -->
+  <!-- Fontes: Plus Jakarta Sans & Fira Code -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   
-  <!-- Estilo Customizado -->
   <link rel="stylesheet" href="style.css">
-
-  <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
@@ -21,17 +18,17 @@
   <div class="dashboard-container">
     <!-- Cabeçalho -->
     <header class="header">
-      <div>
-        <h1>MoniMotor <span class="tag-pro">PREDITIVO</span></h1>
-        <p class="subtitle">Monitoramento Inteligente e Diagnóstico de Falhas em Tempo Real</p>
+      <div class="header-title-box">
+        <h1>MoniMotor <span class="tag-system">PREDITIVO</span></h1>
+        <p class="subtitle">Monitoramento de Motores Industriais em Tempo Real</p>
       </div>
-      <div class="header-badges">
-        <div id="health-badge" class="badge health-ok">
-          <span class="status-dot"></span>
-          <span id="health-text">Motor Operacional</span>
+      <div class="header-status-group">
+        <div id="health-badge" class="badge health-unknown">
+          <span class="status-indicator"></span>
+          <span id="health-text">Aguardando dados...</span>
         </div>
         <div id="status-badge" class="badge offline">
-          <span class="status-dot"></span>
+          <span class="status-indicator"></span>
           <span id="status-text">Desconectado</span>
         </div>
       </div>
@@ -39,63 +36,59 @@
 
     <!-- Cards de Indicadores (KPIs) -->
     <section class="cards-grid">
-      <!-- Temperatura -->
-      <div class="card card-primary" id="card-temp">
+      <div class="card" id="card-temp">
         <div class="card-header">
           <span class="card-title">Temperatura</span>
           <span class="card-unit">°C</span>
         </div>
         <div class="card-value" id="val-temp">--</div>
-        <div class="card-footer">Última atualização: <span id="time-temp">--:--:--</span></div>
+        <div class="card-footer">Atualizado: <span id="time-temp">--:--:--</span></div>
       </div>
 
-      <!-- RPM -->
-      <div class="card card-success" id="card-rpm">
+      <div class="card" id="card-rpm">
         <div class="card-header">
           <span class="card-title">Rotação</span>
           <span class="card-unit">RPM</span>
         </div>
         <div class="card-value" id="val-rpm">--</div>
-        <div class="card-footer">Última atualização: <span id="time-rpm">--:--:--</span></div>
+        <div class="card-footer">Atualizado: <span id="time-rpm">--:--:--</span></div>
       </div>
 
-      <!-- Corrente -->
-      <div class="card card-warning" id="card-corrente">
+      <div class="card" id="card-corrente">
         <div class="card-header">
           <span class="card-title">Corrente</span>
           <span class="card-unit">A</span>
         </div>
         <div class="card-value" id="val-corrente">--</div>
-        <div class="card-footer">Última atualização: <span id="time-corrente">--:--:--</span></div>
+        <div class="card-footer">Atualizado: <span id="time-corrente">--:--:--</span></div>
       </div>
 
-      <!-- Vibração -->
-      <div class="card card-danger" id="card-acel">
+      <div class="card" id="card-acel">
         <div class="card-header">
           <span class="card-title">Vibração (Acel. Z)</span>
           <span class="card-unit">m/s²</span>
         </div>
         <div class="card-value" id="val-acel">--</div>
-        <div class="card-footer">Última atualização: <span id="time-acel">--:--:--</span></div>
+        <div class="card-footer">Atualizado: <span id="time-acel">--:--:--</span></div>
       </div>
     </section>
 
-    <!-- PAINEL DE DIAGNÓSTICO E MANUTENÇÃO PREDITIVA -->
+    <!-- Diagnóstico Preditivo -->
     <section class="diagnostic-section">
       <div class="diagnostic-header">
-        <h2>🔬 Centro de Diagnóstico e Saúde Preditiva</h2>
-        <span class="diagnostic-status-text" id="diagnostic-count">Nenhum problema detectado</span>
+        <h2>Centro de Análise Operacional</h2>
+        <span class="diagnostic-status-text" id="diagnostic-count">Sem análises ativas</span>
       </div>
       <div class="diagnostic-grid" id="diagnostic-container">
-        <!-- Diagnósticos serão injetados via JavaScript aqui -->
+        <!-- Injetado via JS -->
       </div>
     </section>
 
-    <!-- Seção do Gráfico -->
+    <!-- Gráfico -->
     <section class="chart-section">
       <div class="chart-header">
         <h2>Histórico de Leituras</h2>
-        <span class="chart-info">Últimas 20 amostras do Firebase</span>
+        <span class="chart-info">Últimas 20 amostras</span>
       </div>
       <div class="chart-wrapper">
         <canvas id="graficoLeituras"></canvas>
@@ -103,11 +96,10 @@
     </section>
   </div>
 
-  <!-- SDKs Compatíveis do Firebase v9 -->
+  <!-- Firebase SDK v9 -->
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 
-  <!-- Script Principal -->
   <script src="app.js"></script>
 </body>
 </html>
