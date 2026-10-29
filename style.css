@@ -1,4 +1,4 @@
-/* Variáveis Globais de Estilo */
+/* Variáveis Globais */
 :root {
   --bg-color: #0b0f19;
   --card-bg: #131b2e;
@@ -15,18 +15,14 @@
   --font-mono: 'JetBrains Mono', monospace;
 }
 
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
+* { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
   background-color: var(--bg-color);
   color: var(--text-main);
   font-family: var(--font-sans);
   min-height: 100vh;
-  padding: 2.5rem 1.5rem;
+  padding: 2rem 1.5rem;
 }
 
 .dashboard-container {
@@ -49,17 +45,26 @@ body {
 .header h1 {
   font-size: 2rem;
   font-weight: 700;
-  letter-spacing: -0.5px;
   color: #ffffff;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
 }
 
-.subtitle {
-  color: var(--text-muted);
-  font-size: 0.95rem;
-  margin-top: 0.25rem;
+.tag-pro {
+  font-size: 0.75rem;
+  background: rgba(56, 189, 248, 0.15);
+  color: var(--primary-color);
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(56, 189, 248, 0.3);
 }
 
-/* Indicador de Status (Badge) */
+.subtitle { color: var(--text-muted); font-size: 0.9rem; margin-top: 0.25rem; }
+
+.header-badges { display: flex; gap: 0.75rem; }
+
+/* Badges */
 .badge {
   display: flex;
   align-items: center;
@@ -70,38 +75,25 @@ body {
   font-weight: 500;
   border: 1px solid var(--card-border);
   background: rgba(255, 255, 255, 0.02);
-  transition: all 0.3s ease;
 }
 
-.status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-}
+.status-dot { width: 8px; height: 8px; border-radius: 50%; }
 
-.badge.online {
-  background: rgba(52, 211, 153, 0.08);
-  color: var(--success-color);
-  border-color: rgba(52, 211, 153, 0.2);
-}
-.badge.online .status-dot {
-  background-color: var(--success-color);
-  box-shadow: 0 0 10px var(--success-color);
-}
+.badge.online { background: rgba(52, 211, 153, 0.08); color: var(--success-color); border-color: rgba(52, 211, 153, 0.2); }
+.badge.online .status-dot { background-color: var(--success-color); box-shadow: 0 0 8px var(--success-color); }
 
-.badge.offline {
-  background: rgba(248, 113, 113, 0.08);
-  color: var(--danger-color);
-  border-color: rgba(248, 113, 113, 0.2);
-}
-.badge.offline .status-dot {
-  background-color: var(--danger-color);
-}
+.badge.offline { background: rgba(248, 113, 113, 0.08); color: var(--danger-color); border-color: rgba(248, 113, 113, 0.2); }
+.badge.offline .status-dot { background-color: var(--danger-color); }
 
-/* Grelha dos Cartões (KPIs) */
+/* Badges de Saúde */
+.health-ok { background: rgba(52, 211, 153, 0.1); color: var(--success-color); border-color: rgba(52, 211, 153, 0.3); }
+.health-warning { background: rgba(251, 191, 36, 0.1); color: var(--warning-color); border-color: rgba(251, 191, 36, 0.3); }
+.health-danger { background: rgba(248, 113, 113, 0.1); color: var(--danger-color); border-color: rgba(248, 113, 113, 0.3); }
+
+/* Grid de Cartões */
 .cards-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 1.5rem;
 }
 
@@ -112,85 +104,74 @@ body {
   padding: 1.5rem;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
-  transition: transform 0.2s ease, border-color 0.2s ease;
+  gap: 0.8rem;
+  transition: all 0.3s ease;
 }
 
-.card:hover {
-  transform: translateY(-4px);
-  border-color: rgba(255, 255, 255, 0.1);
-}
-
-.card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.card-title {
-  font-weight: 500;
-  color: var(--text-muted);
-  font-size: 0.9rem;
-}
-
-.card-unit {
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  background: rgba(255, 255, 255, 0.04);
-  padding: 3px 8px;
-  border-radius: 6px;
-}
-
-.card-value {
-  font-family: var(--font-mono);
-  font-size: 2.5rem;
-  font-weight: 700;
-  letter-spacing: -1px;
-}
+.card-header { display: flex; justify-content: space-between; align-items: center; }
+.card-title { font-weight: 500; color: var(--text-muted); font-size: 0.9rem; }
+.card-unit { font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-muted); background: rgba(255, 255, 255, 0.04); padding: 3px 8px; border-radius: 6px; }
+.card-value { font-family: var(--font-mono); font-size: 2.4rem; font-weight: 700; }
 
 .card-primary .card-value { color: var(--primary-color); }
 .card-success .card-value { color: var(--success-color); }
 .card-warning .card-value { color: var(--warning-color); }
 .card-danger .card-value { color: var(--danger-color); }
 
-.card-footer {
-  font-size: 0.8rem;
-  color: var(--text-muted);
-  border-top: 1px solid rgba(255, 255, 255, 0.03);
-  padding-top: 0.75rem;
+.card-footer { font-size: 0.8rem; color: var(--text-muted); border-top: 1px solid rgba(255, 255, 255, 0.03); padding-top: 0.75rem; }
+
+/* SEÇÃO DE DIAGNÓSTICO */
+.diagnostic-section {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 16px;
+  padding: 1.5rem;
 }
 
-/* Secção do Gráfico */
+.diagnostic-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.25rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  padding-bottom: 1rem;
+}
+
+.diagnostic-header h2 { font-size: 1.15rem; font-weight: 600; }
+.diagnostic-status-text { font-size: 0.85rem; color: var(--text-muted); }
+
+.diagnostic-grid { display: flex; flex-direction: column; gap: 1rem; }
+
+.diag-card {
+  border-radius: 12px;
+  padding: 1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  border: 1px solid transparent;
+}
+
+.diag-card.ok { background: rgba(52, 211, 153, 0.05); border-color: rgba(52, 211, 153, 0.2); }
+.diag-card.warning { background: rgba(251, 191, 36, 0.08); border-color: rgba(251, 191, 36, 0.3); }
+.diag-card.danger { background: rgba(248, 113, 113, 0.08); border-color: rgba(248, 113, 113, 0.3); }
+
+.diag-title { font-weight: 700; font-size: 0.95rem; display: flex; align-items: center; gap: 0.5rem; }
+.diag-card.ok .diag-title { color: var(--success-color); }
+.diag-card.warning .diag-title { color: var(--warning-color); }
+.diag-card.danger .diag-title { color: var(--danger-color); }
+
+.diag-desc { font-size: 0.88rem; color: var(--text-main); line-height: 1.4; }
+.diag-action { font-size: 0.82rem; color: var(--text-muted); background: rgba(0, 0, 0, 0.2); padding: 0.5rem 0.75rem; border-radius: 6px; }
+
+/* Gráfico */
 .chart-section {
   background: var(--card-bg);
   border: 1px solid var(--card-border);
   border-radius: 16px;
-  padding: 1.8rem;
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+  padding: 1.5rem;
 }
 
-.chart-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1.5rem;
-}
-
-.chart-header h2 {
-  font-size: 1.15rem;
-  font-weight: 600;
-  color: #ffffff;
-}
-
-.chart-info {
-  font-size: 0.8rem;
-  color: var(--text-muted);
-}
-
-.chart-wrapper {
-  position: relative;
-  width: 100%;
-  height: 380px;
-}
+.chart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
+.chart-header h2 { font-size: 1.15rem; font-weight: 600; }
+.chart-info { font-size: 0.8rem; color: var(--text-muted); }
+.chart-wrapper { position: relative; width: 100%; height: 350px; }

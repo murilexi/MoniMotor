@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MoniMotor | Dashboard IoT</title>
+  <title>MoniMotor | Diagnóstico Preditivo IoT</title>
   
   <!-- Google Fonts: Inter & JetBrains Mono -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -19,21 +19,28 @@
 <body>
 
   <div class="dashboard-container">
+    <!-- Cabeçalho -->
     <header class="header">
       <div>
-        <h1>MoniMotor</h1>
-        <p class="subtitle">Monitoramento de Motores Industriais em Tempo Real</p>
+        <h1>MoniMotor <span class="tag-pro">PREDITIVO</span></h1>
+        <p class="subtitle">Monitoramento Inteligente e Diagnóstico de Falhas em Tempo Real</p>
       </div>
-      <div id="status-badge" class="badge offline">
-        <span class="status-dot"></span>
-        <span id="status-text">Desconectado</span>
+      <div class="header-badges">
+        <div id="health-badge" class="badge health-ok">
+          <span class="status-dot"></span>
+          <span id="health-text">Motor Operacional</span>
+        </div>
+        <div id="status-badge" class="badge offline">
+          <span class="status-dot"></span>
+          <span id="status-text">Desconectado</span>
+        </div>
       </div>
     </header>
 
     <!-- Cards de Indicadores (KPIs) -->
     <section class="cards-grid">
       <!-- Temperatura -->
-      <div class="card card-primary">
+      <div class="card card-primary" id="card-temp">
         <div class="card-header">
           <span class="card-title">Temperatura</span>
           <span class="card-unit">°C</span>
@@ -43,7 +50,7 @@
       </div>
 
       <!-- RPM -->
-      <div class="card card-success">
+      <div class="card card-success" id="card-rpm">
         <div class="card-header">
           <span class="card-title">Rotação</span>
           <span class="card-unit">RPM</span>
@@ -53,7 +60,7 @@
       </div>
 
       <!-- Corrente -->
-      <div class="card card-warning">
+      <div class="card card-warning" id="card-corrente">
         <div class="card-header">
           <span class="card-title">Corrente</span>
           <span class="card-unit">A</span>
@@ -62,8 +69,8 @@
         <div class="card-footer">Última atualização: <span id="time-corrente">--:--:--</span></div>
       </div>
 
-      <!-- Vibração (Aceleração Z) -->
-      <div class="card card-danger">
+      <!-- Vibração -->
+      <div class="card card-danger" id="card-acel">
         <div class="card-header">
           <span class="card-title">Vibração (Acel. Z)</span>
           <span class="card-unit">m/s²</span>
@@ -73,11 +80,22 @@
       </div>
     </section>
 
+    <!-- PAINEL DE DIAGNÓSTICO E MANUTENÇÃO PREDITIVA -->
+    <section class="diagnostic-section">
+      <div class="diagnostic-header">
+        <h2>🔬 Centro de Diagnóstico e Saúde Preditiva</h2>
+        <span class="diagnostic-status-text" id="diagnostic-count">Nenhum problema detectado</span>
+      </div>
+      <div class="diagnostic-grid" id="diagnostic-container">
+        <!-- Diagnósticos serão injetados via JavaScript aqui -->
+      </div>
+    </section>
+
     <!-- Seção do Gráfico -->
     <section class="chart-section">
       <div class="chart-header">
-        <h2>Histórico de Leituras Multi-Sensor</h2>
-        <span class="chart-info">Últimas 20 amostras</span>
+        <h2>Histórico de Leituras</h2>
+        <span class="chart-info">Últimas 20 amostras do Firebase</span>
       </div>
       <div class="chart-wrapper">
         <canvas id="graficoLeituras"></canvas>
