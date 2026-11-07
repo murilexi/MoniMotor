@@ -685,7 +685,8 @@ function atualizarCards(dado) {
   const corrente = obterCorrente(dado);
   const vibracao = obterVibracao(dado);
 
-  const hora = formatarHora(dado.timestamp); 
+  const hora = formatarHora(dado.timestamp);
+
   document.getElementById("val-temp").textContent =
     temperatura !== null ? temperatura.toFixed(2) : "--";
 
@@ -1879,95 +1880,88 @@ function iniciarDemonstracao() {
 
   if (demonstracaoAtiva) return;
 
-
   demonstracaoAtiva = true;
 
-  inicioDemonstracao = Date.now();
+  // Uma nova sessão só é criada no primeiro início. Ao retomar após pausa,
+  // preservamos a referência e o estado dos atalhos para não reiniciar a análise.
+  if (!sessaoDemonstracao) {
 
-  contadorDemonstracao = 0;
+    inicioDemonstracao = Date.now();
+    contadorDemonstracao = 0;
 
+    sessaoDemonstracao =
+      "demo_" +
+      Date.now().toString(36) +
+      "_" +
+      Math.random().toString(36).slice(2, 8);
 
-  sessaoDemonstracao =
-    "demo_" +
-    Date.now().toString(36) +
-    "_" +
-    Math.random().toString(36).slice(2, 8);
+    Object.keys(anomalias).forEach(tipo => {
+      anomalias[tipo] = false;
+    });
 
+    // A demonstração usa um nó independente e nunca mistura dados físicos.
+    conectarFonteDados("leituras_teste");
 
-  Object.keys(anomalias).forEach(tipo => {
+  } else if (caminhoAtual !== "leituras_teste") {
 
-    anomalias[tipo] = false;
+    conectarFonteDados("leituras_teste");
 
-  });
+  }
 
-
-  // Abre somente a fonte de demonstração.
-
-  conectarFonteDados("leituras_teste");
-
-
-  // Primeira amostra imediatamente.
-
+  // Primeira amostra imediatamente; demais respeitam o intervalo configurado.
   enviarDadosDemonstracao();
-
-
-  // Próximas amostras a cada cinco segundos.
 
   intervaloDemonstracao = setInterval(
     enviarDadosDemonstracao,
     CONFIG.intervaloSimulacao
   );
 
-
-  console.log(
-    "[DEMONSTRAÇÃO] Sessão iniciada:",
-    sessaoDemonstracao
-  );
+  console.log("[DEMONSTRAÇÃO] Envio iniciado/retomado:", sessaoDemonstracao);
 
 }
 
 
-// ============================================================================
-// 21. ENCERRAR DEMONSTRAÇÃO
-// ============================================================================
-
-function encerrarDemonstracao() {
+// Pausar mantém a sessão, a referência, os alertas e o último gráfico na tela.
+// A próxima barra de espaço retoma a mesma sessão sem reiniciar a linha de base.
+function pausarDemonstracao() {
 
   if (!demonstracaoAtiva) return;
 
+  demonstracaoAtiva = false;
+
+  if (intervaloDemonstracao !== null) {
+    clearInterval(intervaloDemonstracao);
+    intervaloDemonstracao = null;
+  }
+
+  console.log("[DEMONSTRAÇÃO] Pausada. Os dados e o relatório permanecem na tela.");
+
+}
+
+
+// Sair da demonstração e voltar a acompanhar o caminho dos sensores físicos.
+function encerrarDemonstracao() {
+
+  if (!demonstracaoAtiva && !sessaoDemonstracao && caminhoAtual === "leituras") return;
 
   demonstracaoAtiva = false;
 
-
   if (intervaloDemonstracao !== null) {
-
     clearInterval(intervaloDemonstracao);
-
     intervaloDemonstracao = null;
-
   }
 
-
   Object.keys(anomalias).forEach(tipo => {
-
     anomalias[tipo] = false;
-
   });
 
-
   sessaoDemonstracao = null;
-
   referenciaOperacional = null;
-
   identificadorReferencia = null;
-
-
-  // Volta a acompanhar exclusivamente os dados físicos.
 
   conectarFonteDados("leituras");
 
-
-  console.log("[DEMONSTRAÇÃO] Sessão encerrada.");
+  console.log("[DEMONSTRAÇÃO] Encerrada. Monitoramento físico retomado.");
 
 }
 
@@ -2041,118 +2035,75 @@ function restaurarAnomalias() {
 // ============================================================================
 // 23. ATALHOS OCULTOS DE TECLADO
 // ============================================================================
+// ESPAÇO: iniciar / pausar / retomar a demonstração.
+// ALT + SHIFT + 1: anomalia de temperatura.
+// ALT + SHIFT + 2: anomalia de rotação (RPM).
+// ALT + SHIFT + 3: anomalia de corrente.
+// ALT + SHIFT + 4: anomalia de vibração.
+// ALT + SHIFT + 0: restaurar os quatro sensores à condição normal.
+// ALT + SHIFT + M: sair da demonstração e voltar à fonte física /leituras.
+// Nenhum controle ou aviso de simulação é criado na interface.
 
 document.addEventListener("keydown", event => {
 
   if (event.repeat) return;
 
-
   const elemento = event.target;
 
-  // Não interfere em campos de texto, botões ou formulários.
-
+  // Não captura atalhos enquanto o usuário digita em campos editáveis.
   if (
+    elemento &&
     elemento.closest &&
-    elemento.closest(
-      "input, textarea, select, button, [contenteditable='true']"
-    )
+    elemento.closest("input, textarea, select, button, [contenteditable='true']")
   ) {
     return;
   }
 
+  if (event.ctrlKey || event.metaKey) return;
 
-  if (event.ctrlKey || event.metaKey) {
-    return;
-  }
-
-
-  if (!event.altKey || !event.shiftKey) {
-    return;
-  }
-
-
-  const tecla = event.key.toLowerCase();
-
-
-  // ALT + SHIFT + M
-  // Alterna entre demonstração e monitoramento real.
-
-  if (tecla === "m") {
-
+  // Barra de espaço inicia, pausa ou retoma. Impede também a rolagem da página.
+  if (event.code === "Space" && !event.altKey && !event.shiftKey) {
     event.preventDefault();
 
     if (demonstracaoAtiva) {
-
-      encerrarDemonstracao();
-
+      pausarDemonstracao();
     } else {
-
       iniciarDemonstracao();
-
     }
 
     return;
-
   }
 
+  // Atalhos discretos para controle dos valores simulados.
+  if (!event.altKey || !event.shiftKey) return;
 
-  // Demais comandos só funcionam durante demonstração.
+  const tecla = event.key.toLowerCase();
+
+  // ALT + SHIFT + M encerra a sessão e volta à fonte física.
+  if (tecla === "m") {
+    event.preventDefault();
+    encerrarDemonstracao();
+    return;
+  }
 
   if (!demonstracaoAtiva) return;
 
+  const mapaAnomalias = {
+    "1": "temperatura",
+    "2": "rpm",
+    "3": "corrente",
+    "4": "vibracao"
+  };
 
-  // ALT + SHIFT + 1: temperatura
-
-  if (tecla === "1") {
-
+  if (Object.prototype.hasOwnProperty.call(mapaAnomalias, tecla)) {
     event.preventDefault();
-
-    alternarAnomalia("temperatura");
-
+    alternarAnomalia(mapaAnomalias[tecla]);
+    return;
   }
-
-
-  // ALT + SHIFT + 2: RPM
-
-  if (tecla === "2") {
-
-    event.preventDefault();
-
-    alternarAnomalia("rpm");
-
-  }
-
-
-  // ALT + SHIFT + 3: corrente
-
-  if (tecla === "3") {
-
-    event.preventDefault();
-
-    alternarAnomalia("corrente");
-
-  }
-
-
-  // ALT + SHIFT + 4: vibração
-
-  if (tecla === "4") {
-
-    event.preventDefault();
-
-    alternarAnomalia("vibracao");
-
-  }
-
-
-  // ALT + SHIFT + 0: operação normal
 
   if (tecla === "0") {
-
     event.preventDefault();
-
     restaurarAnomalias();
-
   }
 
 });
@@ -2208,5 +2159,3 @@ function iniciarMoniMotor() {
 
 iniciarMoniMotor();
 
-
-// kkk
