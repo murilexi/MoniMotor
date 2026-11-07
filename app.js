@@ -685,8 +685,7 @@ function atualizarCards(dado) {
   const corrente = obterCorrente(dado);
   const vibracao = obterVibracao(dado);
 
-  const hora = formatarHora(dado.timestamp);
-
+  const hora = formatarHora(dado.timestamp); 
   document.getElementById("val-temp").textContent =
     temperatura !== null ? temperatura.toFixed(2) : "--";
 
@@ -2209,3 +2208,5 @@ function iniciarMoniMotor() {
 
 iniciarMoniMotor();
 
+
+// kkk
