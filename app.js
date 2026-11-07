@@ -326,7 +326,6 @@ function ehRegistro(dado) {
 
 
 function obterLeituras(snapshot) {
-
   const dados = snapshot.val();
 
   if (!dados || typeof dados !== "object") {
@@ -335,9 +334,7 @@ function obterLeituras(snapshot) {
 
   const registros = [];
 
-
   function percorrer(no, caminho) {
-
     if (
       !no ||
       typeof no !== "object" ||
@@ -346,39 +343,55 @@ function obterLeituras(snapshot) {
       return;
     }
 
-    // Registro encontrado.
-    if (ehRegistro(no)) {
-
-      registros.push({
-        ...no,
-        _key: caminho
-      });
-
-      return;
-
-    }
-
-    // Procura registros dentro de agrupadores antigos.
-
-    Object.entries(no).forEach(([chave, valor]) => {
-
-      if (
+    const filhos = Object.entries(no).filter(
+      ([, valor]) =>
         valor !== null &&
         typeof valor === "object" &&
         !Array.isArray(valor)
-      ) {
+    );
 
-        const novoCaminho = caminho
-          ? caminho + "/" + chave
-          : chave;
+    // Preserva uma leitura antiga que esteja diretamente
+    // na raiz, mesmo que existam registros filhos.
+    if (ehRegistro(no)) {
+      registros.push({
+        ...no,
+        _key: caminho || "__registro_raiz__"
+      });
+    }
 
-        percorrer(valor, novoCaminho);
+    // Continua procurando registros dentro dos filhos.
+    filhos.forEach(([chave, valor]) => {
+      const novoCaminho = caminho
+        ? `${caminho}/${chave}`
+        : chave;
 
-      }
-
+      percorrer(valor, novoCaminho);
     });
-
   }
+
+  percorrer(dados, "");
+
+  const unicos = new Map();
+
+  registros.forEach(registro => {
+    unicos.set(registro._key, registro);
+  });
+
+  const resultado = [...unicos.values()];
+
+  resultado.sort((a, b) => {
+    const tempoA = converterTimestamp(a.timestamp);
+    const tempoB = converterTimestamp(b.timestamp);
+
+    if (tempoA !== null && tempoB !== null) {
+      return tempoA - tempoB;
+    }
+
+    return String(a._key).localeCompare(String(b._key));
+  });
+
+  return resultado.slice(-CONFIG.quantidadeAmostras);
+}
 
 
   percorrer(dados, "");
