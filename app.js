@@ -326,6 +326,7 @@ function ehRegistro(dado) {
 
 
 function obterLeituras(snapshot) {
+
   const dados = snapshot.val();
 
   if (!dados || typeof dados !== "object") {
@@ -335,6 +336,7 @@ function obterLeituras(snapshot) {
   const registros = [];
 
   function percorrer(no, caminho) {
+
     if (
       !no ||
       typeof no !== "object" ||
@@ -350,8 +352,6 @@ function obterLeituras(snapshot) {
         !Array.isArray(valor)
     );
 
-    // Preserva uma leitura antiga que esteja diretamente
-    // na raiz, mesmo que existam registros filhos.
     if (ehRegistro(no)) {
       registros.push({
         ...no,
@@ -359,7 +359,6 @@ function obterLeituras(snapshot) {
       });
     }
 
-    // Continua procurando registros dentro dos filhos.
     filhos.forEach(([chave, valor]) => {
       const novoCaminho = caminho
         ? `${caminho}/${chave}`
@@ -367,6 +366,7 @@ function obterLeituras(snapshot) {
 
       percorrer(valor, novoCaminho);
     });
+
   }
 
   percorrer(dados, "");
@@ -391,39 +391,8 @@ function obterLeituras(snapshot) {
   });
 
   return resultado.slice(-CONFIG.quantidadeAmostras);
+
 }
-
-
-  percorrer(dados, "");
-
-
-  const unicos = new Map();
-
-  registros.forEach(registro => {
-    unicos.set(registro._key, registro);
-  });
-
-
-  const resultado = [...unicos.values()];
-
-  resultado.sort((a, b) => {
-
-    const tempoA = converterTimestamp(a.timestamp);
-    const tempoB = converterTimestamp(b.timestamp);
-
-    if (tempoA !== null && tempoB !== null) {
-      return tempoA - tempoB;
-    }
-
-    return String(a._key).localeCompare(String(b._key));
-
-  });
-
-
-  return resultado.slice(-CONFIG.quantidadeAmostras);
-
-
-
 
 // ============================================================================
 // 6. STATUS DA CONEXAO
@@ -975,6 +944,84 @@ function capturarReferencia(leituras) {
 }
 
 
+// Detecta também um valor isolado alterado diretamente no Realtime Database.
+// O alerta pontual é imediato; a confirmação de persistência continua exigindo
+// CONFIG.amostrasPersistencia leituras consecutivas.
+function detectarDesviosPontuais(leituras, referencia) {
+
+  const limites = {
+    temperatura: referencia.temperatura + CONFIG.aumentoTemperatura,
+    corrente: Math.max(
+      referencia.corrente * (1 + CONFIG.aumentoCorrentePercentual),
+      referencia.corrente + CONFIG.aumentoCorrenteAbsoluto
+    ),
+    rpm: referencia.rpm * (1 - CONFIG.quedaRPMPercentual),
+    vibracao: Math.max(
+      referencia.vibracao * (1 + CONFIG.aumentoVibracaoPercentual),
+      referencia.vibracao + CONFIG.aumentoVibracaoAbsoluto
+    )
+  };
+
+  const eventos = new Map();
+
+  leituras.forEach(dado => {
+    const verificacoes = [
+      {
+        campo: "temperatura",
+        sensor: "DS18B20",
+        valor: obterTemperatura(dado),
+        limite: limites.temperatura,
+        fora: valor => valor >= limites.temperatura,
+        titulo: "TEMPERATURA FORA DA FAIXA",
+        acao: "Confirmar a medição e verificar ventilação, carga térmica, fixação do sensor e limite do fabricante."
+      },
+      {
+        campo: "corrente",
+        sensor: "ACS712",
+        valor: obterCorrente(dado),
+        limite: limites.corrente,
+        fora: valor => valor >= limites.corrente,
+        titulo: "CORRENTE FORA DA FAIXA",
+        acao: "Comparar com a corrente nominal e conferir a medição com instrumento independente; investigar carga e alimentação."
+      },
+      {
+        campo: "rpm",
+        sensor: "Sensor Hall",
+        valor: obterRPM(dado),
+        limite: limites.rpm,
+        fora: valor => valor <= limites.rpm,
+        titulo: "ROTAÇÃO ABAIXO DA REFERÊNCIA",
+        acao: "Conferir carga mecânica, acionamento, posição do ímã e contagem de pulsos."
+      },
+      {
+        campo: "vibracao",
+        sensor: "MPU6050",
+        valor: obterVibracao(dado),
+        limite: limites.vibracao,
+        fora: valor => valor >= limites.vibracao,
+        titulo: "VIBRAÇÃO FORA DA FAIXA",
+        acao: "Verificar fixação do sensor, base, acoplamento e rolamentos; confirmar com instrumento apropriado."
+      }
+    ];
+
+    verificacoes.forEach(item => {
+      if (item.valor !== null && item.fora(item.valor)) {
+        // Como as leituras já estão ordenadas por timestamp, o último evento
+        // encontrado para cada sensor é o mais recente dentro da janela consultada.
+        eventos.set(item.campo, {
+          ...item,
+          timestamp: dado.timestamp,
+          chave: dado._key || null
+        });
+      }
+    });
+  });
+
+  return [...eventos.values()];
+
+}
+
+
 // ============================================================================
 // 13. ANALISE DE MANUTENCAO
 // ============================================================================
@@ -1077,7 +1124,7 @@ function analisarSaudeDoMotor(leituras) {
       "ok",
       "COLETANDO REFERÊNCIA OPERACIONAL",
       "Todos os sensores",
-      "São necessárias dez leituras completas em operação normal.",
+      `São necessárias ${CONFIG.amostrasReferencia} leituras completas em operação normal.`,
       "Manter condições estáveis durante a coleta da referência."
     );
 
@@ -1158,6 +1205,33 @@ function analisarSaudeDoMotor(leituras) {
 
     }
   );
+
+
+  // ALERTAS PONTUAIS: uma edição manual ou um pico isolado em qualquer
+  // registro dentro das últimas 20 amostras já aparece no relatório.
+  // Se o desvio também for persistente, a análise detalhada abaixo assume.
+  const persistenciaPorCampo = {
+    temperatura: temperaturaAlta,
+    corrente: correnteAlta,
+    rpm: rpmBaixo,
+    vibracao: vibracaoAlta
+  };
+
+  detectarDesviosPontuais(leituras, referencia).forEach(evento => {
+
+    if (persistenciaPorCampo[evento.campo]) return;
+
+    const horarioEvento = formatarHora(evento.timestamp);
+
+    adicionar(
+      "warning",
+      `ALERTA PONTUAL: ${evento.titulo}`,
+      evento.sensor,
+      `Foi identificada uma leitura isolada de ${evento.valor.toFixed(2)}. Limite de referência configurado: ${evento.limite.toFixed(2)}. Registro: ${horarioEvento}.`,
+      evento.acao
+    );
+
+  });
 
 
   // CORRENTE + RPM
@@ -1986,7 +2060,7 @@ function alternarAnomalia(tipo) {
   if (!referenciaOperacional) {
 
     console.warn(
-      "[TESTE] Aguarde dez leituras normais."
+      `[TESTE] Aguarde ${CONFIG.amostrasReferencia} leituras normais e a mensagem de referência operacional estabelecida.`
     );
 
     return;
@@ -2046,41 +2120,35 @@ function restaurarAnomalias() {
 
 document.addEventListener("keydown", event => {
 
-  if (event.repeat) return;
+  if (event.repeat || event.ctrlKey || event.metaKey) return;
 
   const elemento = event.target;
+  const campoEditavel = elemento && elemento.closest &&
+    elemento.closest("input, textarea, select, [contenteditable='true']");
 
-  // Não captura atalhos enquanto o usuário digita em campos editáveis.
-  if (
-    elemento &&
-    elemento.closest &&
-    elemento.closest("input, textarea, select, button, [contenteditable='true']")
-  ) {
-    return;
-  }
+  if (campoEditavel) return;
 
-  if (event.ctrlKey || event.metaKey) return;
-
-  // Barra de espaço inicia, pausa ou retoma. Impede também a rolagem da página.
+  // Espaço inicia/pausa mesmo que um botão ou link esteja focado.
   if (event.code === "Space" && !event.altKey && !event.shiftKey) {
     event.preventDefault();
-
-    if (demonstracaoAtiva) {
-      pausarDemonstracao();
-    } else {
-      iniciarDemonstracao();
-    }
-
+    demonstracaoAtiva ? pausarDemonstracao() : iniciarDemonstracao();
     return;
   }
 
-  // Atalhos discretos para controle dos valores sdos.
   if (!event.altKey || !event.shiftKey) return;
 
-  const tecla = event.key.toLowerCase();
+  const mapaAnomalias = {
+    Digit1: "temperatura",
+    Numpad1: "temperatura",
+    Digit2: "rpm",
+    Numpad2: "rpm",
+    Digit3: "corrente",
+    Numpad3: "corrente",
+    Digit4: "vibracao",
+    Numpad4: "vibracao"
+  };
 
-  // ALT + SHIFT + M encerra a sessão e volta à fonte física.
-  if (tecla === "m") {
+  if (event.code === "KeyM") {
     event.preventDefault();
     encerrarDemonstracao();
     return;
@@ -2088,20 +2156,13 @@ document.addEventListener("keydown", event => {
 
   if (!demonstracaoAtiva) return;
 
-  const mapaAnomalias = {
-    "1": "temperatura",
-    "2": "rpm",
-    "3": "corrente",
-    "4": "vibracao"
-  };
-
-  if (Object.prototype.hasOwnProperty.call(mapaAnomalias, tecla)) {
+  if (Object.prototype.hasOwnProperty.call(mapaAnomalias, event.code)) {
     event.preventDefault();
-    alternarAnomalia(mapaAnomalias[tecla]);
+    alternarAnomalia(mapaAnomalias[event.code]);
     return;
   }
 
-  if (tecla === "0") {
+  if (event.code === "Digit0" || event.code === "Numpad0") {
     event.preventDefault();
     restaurarAnomalias();
   }
@@ -2158,4 +2219,3 @@ function iniciarMoniMotor() {
 
 
 iniciarMoniMotor();
-
