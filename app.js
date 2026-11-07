@@ -413,7 +413,7 @@ function obterLeituras(snapshot) {
 
   return registros.slice(-CONFIG.quantidadeAmostras);
 
-}
+
 
 
 // ==============================================================================
