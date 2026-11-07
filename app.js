@@ -604,32 +604,42 @@ function limparCards() {
 // ATUALIZACAO DO GRAFICO
 // ==============================================================================
 
+
 function atualizarGrafico(leituras) {
 
-  if (!grafico) return;
+  if (!grafico) {
+    console.error("Gráfico Chart.js não foi inicializado.");
+    return;
+  }
 
   grafico.data.labels = leituras.map(
     dado => formatarHora(dado.timestamp)
   );
 
   grafico.data.datasets[0].data = leituras.map(
-    obterTemperatura
+    dado => obterTemperatura(dado)
   );
 
   grafico.data.datasets[1].data = leituras.map(
-    obterRPM
+    dado => obterRPM(dado)
   );
 
   grafico.data.datasets[2].data = leituras.map(
-    obterCorrente
+    dado => obterCorrente(dado)
   );
 
   grafico.data.datasets[3].data = leituras.map(
-    obterVibracao
+    dado => obterVibracao(dado)
   );
 
-  grafico.update();
+  // Atualização imediata, sem esperar animação.
+  grafico.update("none");
 
+  console.log(
+    "[GRÁFICO] Atualizado com",
+    leituras.length,
+    "amostras."
+  );
 }
 
 
@@ -1258,6 +1268,8 @@ function processarLeituras(leituras) {
 
   atualizarGrafico(leituras);
 
+  renderizarHistorico(leituras);
+
   // Não aceitar dados antigos de simulação como telemetria física.
 
   if (atual.modo === "simulacao") {
@@ -1376,11 +1388,36 @@ function processarLeituras(leituras) {
 // ESCUTA DO FIREBASE EM TEMPO REAL
 // ==============================================================================
 
+
 function escutarLeiturasEmTempoReal() {
 
-  leiturasRef.on("value", snapshot => {
+  console.log("[FIREBASE] Iniciando monitoramento de /leituras...");
+
+  const consulta = database
+    .ref("leituras")
+    .orderByKey()
+    .limitToLast(CONFIG.quantidadeAmostras);
+
+  consulta.on("value", snapshot => {
+
+    console.log(
+      "[FIREBASE] Snapshot recebido:",
+      snapshot.numChildren(),
+      "registros."
+    );
 
     const leituras = obterLeituras(snapshot);
+
+    console.log("[FIREBASE] Leituras interpretadas:", leituras);
+
+    if (leituras.length > 0) {
+
+      console.log(
+        "[FIREBASE] Última leitura:",
+        leituras[leituras.length - 1]
+      );
+
+    }
 
     ultimoRecebimento = Date.now();
 
@@ -1390,15 +1427,16 @@ function escutarLeiturasEmTempoReal() {
 
   }, erro => {
 
-    console.error("Erro na leitura do Firebase:", erro);
+    console.error("[FIREBASE] ERRO DE LEITURA:", erro);
 
-    tratarEstadoSemSinal(
+    mostrarSemDados(
       "Erro ao receber dados do Firebase"
     );
 
   });
 
 }
+
 
 
 // ==============================================================================
@@ -1993,3 +2031,92 @@ document.addEventListener("keydown", event => {
 
 // Estado inicial dos controles.
 atualizarInterfaceTeste();
+
+
+function renderizarHistorico(leituras) {
+
+  const corpo = document.getElementById("history-body");
+  const contador = document.getElementById("history-count");
+
+  if (!corpo || !contador) {
+    console.error("Elementos do histórico não encontrados.");
+    return;
+  }
+
+  corpo.replaceChildren();
+
+  if (leituras.length === 0) {
+
+    const linha = document.createElement("tr");
+    const celula = document.createElement("td");
+
+    celula.colSpan = 6;
+    celula.className = "history-empty";
+    celula.textContent = "Nenhuma leitura recebida.";
+
+    linha.appendChild(celula);
+    corpo.appendChild(linha);
+
+    contador.textContent = "0 amostras";
+    renderizarHistorico([]);
+
+    return;
+  }
+
+  // Mais recente primeiro.
+  const recentes = [...leituras]
+    .reverse()
+    .slice(0, 10);
+
+  recentes.forEach(dado => {
+
+    const linha = document.createElement("tr");
+
+    const valores = [
+
+      formatarHora(dado.timestamp),
+
+      obterTemperatura(dado) !== null
+        ? obterTemperatura(dado).toFixed(2) + " °C"
+        : "--",
+
+      obterRPM(dado) !== null
+        ? obterRPM(dado).toLocaleString("pt-BR")
+        : "--",
+
+      obterCorrente(dado) !== null
+        ? obterCorrente(dado).toFixed(3) + " A"
+        : "--",
+
+      obterVibracao(dado) !== null
+        ? obterVibracao(dado).toFixed(3) + " m/s²"
+        : "--",
+
+      dado.modo === "simulacao"
+        ? "SIMULAÇÃO"
+        : "REAL"
+
+    ];
+
+    valores.forEach((valor, indice) => {
+
+      const celula = document.createElement("td");
+
+      celula.textContent = valor;
+
+      if (indice === 5) {
+        celula.className = "history-origin";
+      }
+
+      linha.appendChild(celula);
+
+    });
+
+    corpo.appendChild(linha);
+
+  });
+
+  contador.textContent =
+    `${leituras.length} amostras recebidas`;
+
+}

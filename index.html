@@ -57,6 +57,53 @@
       </div>
     </header>
 
+
+<!-- HISTORICO DE LEITURAS -->
+<section class="history-section">
+
+  <div class="history-header">
+
+    <div>
+      <h2>Últimas Leituras Recebidas</h2>
+      <p>Registro cronológico das medições recebidas pelo Firebase.</p>
+    </div>
+
+    <span id="history-count">0 amostras</span>
+
+  </div>
+
+  <div class="history-table-wrapper">
+
+    <table class="history-table">
+
+      <thead>
+        <tr>
+          <th>Horário</th>
+          <th>Temperatura</th>
+          <th>RPM</th>
+          <th>Corrente</th>
+          <th>Aceleração Z</th>
+          <th>Origem</th>
+        </tr>
+      </thead>
+
+      <tbody id="history-body">
+
+        <tr>
+          <td colspan="6" class="history-empty">
+            Aguardando primeiras leituras...
+          </td>
+        </tr>
+
+      </tbody>
+
+    </table>
+
+  </div>
+
+</section>
+
+
     <!-- INDICADORES -->
     <section class="cards-grid">
 
