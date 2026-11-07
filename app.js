@@ -1,25 +1,24 @@
 
-// ==============================================================================
-// MONIMOTOR
-// Monitoramento de motores industriais
-// Firebase Realtime Database + Chart.js
-// ==============================================================================
+/* ============================================================================
+   MONIMOTOR
+   Dashboard de monitoramento e análise de condição de motores
+   Firebase Realtime Database + Chart.js
+============================================================================ */
 
-// MANTENHA AQUI SEU firebaseConfig ORIGINAL.
+
+/* ============================================================================
+   1. FIREBASE
+============================================================================ */
 
 const firebaseConfig = {
-  apiKey: "SUA_API_KEY",
+  apiKey: "SUA_API_KEY_ORIGINAL",
   authDomain: "upx2---projeto.firebaseapp.com",
   databaseURL: "https://upx2---projeto-default-rtdb.firebaseio.com/",
   projectId: "upx2---projeto",
   storageBucket: "upx2---projeto.firebasestorage.app",
   messagingSenderId: "320149787397",
-  appId: "SEU_APP_ID"
+  appId: "SEU_APP_ID_ORIGINAL"
 };
-
-// ==============================================================================
-// FIREBASE
-// ==============================================================================
 
 if (!firebase.apps.length) {
   firebase.initializeApp(firebaseConfig);
@@ -33,62 +32,72 @@ const leiturasRef = database
   .limitToLast(20);
 
 
-// ==============================================================================
-// CONFIGURACOES DO MONITORAMENTO
-// ==============================================================================
+/* ============================================================================
+   2. CONFIGURAÇÕES
+============================================================================ */
 
 const CONFIG = {
 
-  intervaloTimeout: 15000,
-
   quantidadeAmostras: 20,
+  quantidadeHistorico: 10,
+
+  intervaloTimeout: 15000,
+  intervaloSimulacao: 5000,
 
   amostrasReferencia: 10,
-
   amostrasPersistencia: 3,
 
-  // Valores para diferenciar motor parado de motor em operação.
-  // Ajustar conforme a corrente real e a rotação do motor.
-
   rpmMinimoOperacao: 30,
-
   correnteMinimaOperacao: 0.25,
-
-  // Detectores relativos à referência operacional.
 
   aumentoTemperatura: 4.0,
 
   aumentoCorrentePercentual: 0.25,
-
-  aumentoCorrenteAbsoluto: 0.30,
+  aumentoCorrenteAbsoluto: 0.5,
 
   aumentoVibracaoPercentual: 0.50,
-
   aumentoVibracaoAbsoluto: 0.30,
 
   quedaRPMPercentual: 0.12,
 
-  // Oscilações persistentes.
-
   variacaoRPM: 0.08,
-
   variacaoCorrente: 0.20
 
 };
 
+
+/* ============================================================================
+   3. ESTADOS GLOBAIS
+============================================================================ */
+
 let ultimoRecebimento = null;
+
+let referenciaOperacional = null;
+let identificadorReferencia = null;
 
 let alertaTimeoutExibido = false;
 
-let referenciaOperacional = null;
-
 let grafico = null;
 
+// Simulador
+let simulacaoAtiva = false;
+let simulacaoTimer = null;
 let sessaoTesteAtual = null;
+let contadorTeste = 0;
+let enviandoSimulacao = false;
+let inicioSimulacao = 0;
 
-// ==============================================================================
-// FUNCOES DE CONVERSAO E VALIDACAO
-// ==============================================================================
+const anomaliasTeste = {
+  temperatura: false,
+  rpm: false,
+  corrente: false,
+  vibracao: false
+};
+
+
+/* ============================================================================
+   4. FUNÇÕES AUXILIARES
+============================================================================ */
 
 function numeroValido(valor) {
 
@@ -109,9 +118,7 @@ function numeroValido(valor) {
 
 function obterTemperatura(dado) {
 
-  if (dado.sensor_ds18b20_ok === false) {
-    return null;
-  }
+  if (dado.sensor_ds18b20_ok === false) return null;
 
   const valor = numeroValido(dado.temperatura);
 
@@ -128,11 +135,7 @@ function obterRPM(dado) {
 
   const valor = numeroValido(dado.rpm);
 
-  if (
-    valor === null ||
-    valor < 0 ||
-    valor > 50000
-  ) {
+  if (valor === null || valor < 0 || valor > 50000) {
     return null;
   }
 
@@ -143,17 +146,11 @@ function obterRPM(dado) {
 
 function obterCorrente(dado) {
 
-  if (dado.sensor_acs712_ok === false) {
-    return null;
-  }
+  if (dado.sensor_acs712_ok === false) return null;
 
   const valor = numeroValido(dado.corrente);
 
-  if (
-    valor === null ||
-    valor < 0 ||
-    valor > 100
-  ) {
+  if (valor === null || valor < 0 || valor > 100) {
     return null;
   }
 
@@ -161,79 +158,16 @@ function obterCorrente(dado) {
 
 }
 
-
-// IMPORTANTE:
-// O dashboard utiliza vibracao_rms_z.
-// Nao confundir esse campo com vibracao_pico_z.
 
 function obterVibracao(dado) {
 
-  if (dado.sensor_mpu6050_ok === false) {
-    return null;
-  }
-
-  const valor = numeroValido(dado.vibracao_rms_z);
-
-  if (
-    valor === null ||
-    valor < 0 ||
-    valor > 100
-  ) {
-    return null;
-  }
-
-  return valor;
-
-}
-
-
-function converterTimestamp(valor) {
-
-  const numero = numeroValido(valor);
-
-  if (numero === null) return null;
-
-  if (numero >= 1000000000000) {
-    return numero;
-  }
-
-  if (numero >= 1000000000) {
-    return numero * 1000;
-  }
-
-  return null;
-
-}
-
-
-function formatarHora(timestamp) {
-
-  const tempo = converterTimestamp(timestamp);
-
-  if (tempo === null) {
-    return "--:--:--";
-  }
-
-  return new Date(tempo).toLocaleTimeString("pt-BR");
-
-}
-
-
-function registroValido(dado) {
-
-  if (
-    !dado ||
-    typeof dado !== "object" ||
-    Array.isArray(dado)
-  ) {
-    return false;
-  }
+  if (dado.sensor_mpu6050_ok === false) return null;
 
   return (
-    Object.prototype.hasOwnProperty.call(dado, "temperatura") ||
-    Object.prototype.hasOwnProperty.call(dado, "rpm") ||
-    Object.prototype.hasOwnProperty.call(dado, "corrente") ||
-    Object.prototype.hasOwnProperty.call(dado, "vibracao_rms_z")
+    numeroValido(dado.vibracao_rms_z) ??
+    numeroValido(dado.acel_rms_z) ??
+    numeroValido(dado.vibracao_pico_z) ??
+    numeroValido(dado.acel_z)
   );
 
 }
@@ -251,9 +185,38 @@ function leituraCompleta(dado) {
 }
 
 
-// ==============================================================================
-// ESTATISTICA
-// ==============================================================================
+function formatarHora(timestamp) {
+
+  const numero = numeroValido(timestamp);
+
+  if (numero === null) return "--:--:--";
+
+  let tempo = numero;
+
+  // Unix em segundos.
+  if (numero < 1000000000000) {
+    tempo *= 1000;
+  }
+
+  return new Date(tempo).toLocaleTimeString("pt-BR");
+
+}
+
+
+function converterTimestamp(timestamp) {
+
+  const numero = numeroValido(timestamp);
+
+  if (numero === null) return null;
+
+  if (numero >= 1000000000000) return numero;
+
+  if (numero >= 1000000000) return numero * 1000;
+
+  return null;
+
+}
+
 
 function mediana(valores) {
 
@@ -280,7 +243,10 @@ function coeficienteVariacao(valores) {
 
   if (validos.length < 3) return 0;
 
-  const media = validos.reduce((a, b) => a + b, 0) / validos.length;
+  const media = validos.reduce(
+    (soma, valor) => soma + valor,
+    0
+  ) / validos.length;
 
   if (media <= 0) return 0;
 
@@ -300,25 +266,80 @@ function persistenciaConfirmada(leituras, seletor, condicao) {
     return false;
   }
 
-  const recentes = leituras.slice(
-    -CONFIG.amostrasPersistencia
-  );
+  return leituras
+    .slice(-CONFIG.amostrasPersistencia)
+    .every(dado => {
 
-  return recentes.every(dado => {
+      const valor = seletor(dado);
 
-    const valor = seletor(dado);
+      return valor !== null && condicao(valor);
 
-    return valor !== null && condicao(valor);
-
-  });
+    });
 
 }
 
 
-// ==============================================================================
-// LEITURAS DO FIREBASE
-// ==============================================================================
+/* ============================================================================
+   5. CORREÇÃO PRINCIPAL: LEITURA DA ESTRUTURA FIREBASE
+============================================================================ */
 
+// Identifica se um objeto possui campos diretamente relacionados aos sensores.
+
+function possuiCamposDeSensor(objeto) {
+
+  if (
+    !objeto ||
+    typeof objeto !== "object" ||
+    Array.isArray(objeto)
+  ) {
+    return false;
+  }
+
+  const campos = [
+    "temperatura",
+    "rpm",
+    "corrente",
+    "vibracao_rms_z",
+    "vibracao_pico_z",
+    "acel_rms_z",
+    "acel_z"
+  ];
+
+  return campos.some(campo =>
+    Object.prototype.hasOwnProperty.call(objeto, campo)
+  );
+
+}
+
+
+// Extrai apenas os campos simples de um registro.
+// Isso impede que um agrupador com várias chaves PUSH
+// seja interpretado como uma única leitura.
+
+function obterCamposSimples(objeto) {
+
+  const registro = {};
+
+  Object.entries(objeto).forEach(([campo, valor]) => {
+
+    if (
+      valor === null ||
+      typeof valor !== "object"
+    ) {
+
+      registro[campo] = valor;
+
+    }
+
+  });
+
+  return registro;
+
+}
+
+
+// Percorre a estrutura mesmo se houver um agrupador antigo
+// envolvendo os registros mais recentes.
 
 function obterLeituras(snapshot) {
 
@@ -330,75 +351,68 @@ function obterLeituras(snapshot) {
 
   const registros = [];
 
-  // PRIMEIRO: procura as leituras individuais criadas por PUSH.
-  snapshot.forEach(childSnapshot => {
+  function percorrer(no, caminho) {
 
-    const item = childSnapshot.val();
+    if (
+      !no ||
+      typeof no !== "object" ||
+      Array.isArray(no)
+    ) {
+      return;
+    }
 
-    if (ehRegistro(item)) {
+    const registroSimples = obterCamposSimples(no);
+
+    // Se este nível contém campos de sensores,
+    // registra os campos próprios, sem copiar os filhos.
+    if (possuiCamposDeSensor(registroSimples)) {
 
       registros.push({
-        ...item,
-        _key: childSnapshot.key
+
+        ...registroSimples,
+
+        _key: caminho || "registro-antigo"
+
       });
 
     }
 
-  });
+    // Procura registros aninhados.
+    Object.entries(no).forEach(([chave, valor]) => {
 
-  // Se encontrou registros individuais, utiliza-os.
-  if (registros.length > 0) {
+      if (
+        valor !== null &&
+        typeof valor === "object" &&
+        !Array.isArray(valor)
+      ) {
 
-    registros.sort((a, b) => {
+        const novoCaminho = caminho
+          ? caminho + "/" + chave
+          : chave;
 
-      const tempoA = converterTimestamp(a.timestamp);
-      const tempoB = converterTimestamp(b.timestamp);
+        percorrer(valor, novoCaminho);
 
-      if (tempoA !== null && tempoB !== null) {
-        return tempoA - tempoB;
       }
-
-      return String(a._key).localeCompare(String(b._key));
 
     });
 
-    return registros.slice(-CONFIG.quantidadeAmostras);
   }
 
-  // SEGUNDO: compatibilidade com o formato antigo.
-  if (ehRegistro(dados)) {
+  percorrer(dados, "");
 
-    return [{
-      ...dados,
-      _key: "registro-antigo"
-    }];
+  // Elimina eventuais registros duplicados.
+  const unicos = new Map();
 
-  }
+  registros.forEach(registro => {
 
-  return [];
-}
-
-
-  const registros = [];
-
-  // Novo formato: registros criados por PUSH.
-
-  snapshot.forEach(childSnapshot => {
-
-    const item = childSnapshot.val();
-
-    if (registroValido(item)) {
-
-      registros.push({
-        ...item,
-        _key: childSnapshot.key
-      });
-
-    }
+    unicos.set(registro._key, registro);
 
   });
 
-  registros.sort((a, b) => {
+  const resultado = [...unicos.values()];
+
+  // Ordena pelo horário real do servidor.
+  resultado.sort((a, b) => {
 
     const tempoA = converterTimestamp(a.timestamp);
     const tempoB = converterTimestamp(b.timestamp);
@@ -411,14 +425,14 @@ function obterLeituras(snapshot) {
 
   });
 
-  return registros.slice(-CONFIG.quantidadeAmostras);
+  return resultado.slice(-CONFIG.quantidadeAmostras);
 
 }
 
 
-// ==============================================================================
-// MONITOR DE CONEXAO FIREBASE
-// ==============================================================================
+/* ============================================================================
+   6. MONITORAMENTO DA CONEXÃO FIREBASE
+============================================================================ */
 
 function monitorarStatusConexao() {
 
@@ -439,22 +453,43 @@ function monitorarStatusConexao() {
       ? "badge online"
       : "badge offline";
 
+    console.log(
+      "[CONEXÃO FIREBASE]",
+      online ? "ONLINE" : "OFFLINE"
+    );
+
   }, erro => {
 
-    console.error("Erro de conexão Firebase:", erro);
+    console.error("[FIREBASE] Erro de conexão:", erro);
 
   });
 
 }
 
 
-// ==============================================================================
-// GRAFICO
-// ==============================================================================
+/* ============================================================================
+   7. GRÁFICO CHART.JS
+============================================================================ */
 
-const canvas = document.getElementById("graficoLeituras");
+function inicializarGrafico() {
 
-if (canvas && typeof Chart !== "undefined") {
+  const canvas = document.getElementById("graficoLeituras");
+
+  if (!canvas) {
+
+    console.error("[GRÁFICO] Canvas graficoLeituras não encontrado.");
+
+    return;
+
+  }
+
+  if (typeof Chart === "undefined") {
+
+    console.error("[GRÁFICO] Biblioteca Chart.js não carregada.");
+
+    return;
+
+  }
 
   grafico = new Chart(canvas.getContext("2d"), {
 
@@ -469,9 +504,12 @@ if (canvas && typeof Chart !== "undefined") {
         {
           label: "Temperatura (°C)",
           data: [],
+          yAxisID: "yTemperatura",
           borderColor: "#0099ff",
+          backgroundColor: "#0099ff",
           borderWidth: 2,
-          pointRadius: 2,
+          pointRadius: 3,
+          pointHoverRadius: 6,
           tension: 0.2,
           spanGaps: false
         },
@@ -479,9 +517,12 @@ if (canvas && typeof Chart !== "undefined") {
         {
           label: "RPM",
           data: [],
+          yAxisID: "yRPM",
           borderColor: "#00e676",
+          backgroundColor: "#00e676",
           borderWidth: 2,
-          pointRadius: 2,
+          pointRadius: 3,
+          pointHoverRadius: 6,
           tension: 0.2,
           spanGaps: false
         },
@@ -489,9 +530,12 @@ if (canvas && typeof Chart !== "undefined") {
         {
           label: "Corrente RMS (A)",
           data: [],
+          yAxisID: "yCorrente",
           borderColor: "#ffb300",
+          backgroundColor: "#ffb300",
           borderWidth: 2,
-          pointRadius: 2,
+          pointRadius: 3,
+          pointHoverRadius: 6,
           tension: 0.2,
           spanGaps: false
         },
@@ -499,9 +543,12 @@ if (canvas && typeof Chart !== "undefined") {
         {
           label: "Aceleração RMS Z (m/s²)",
           data: [],
+          yAxisID: "yVibracao",
           borderColor: "#ff3333",
+          backgroundColor: "#ff3333",
           borderWidth: 2,
-          pointRadius: 2,
+          pointRadius: 3,
+          pointHoverRadius: 6,
           tension: 0.2,
           spanGaps: false
         }
@@ -516,6 +563,8 @@ if (canvas && typeof Chart !== "undefined") {
 
       maintainAspectRatio: false,
 
+      animation: false,
+
       interaction: {
         intersect: false,
         mode: "index"
@@ -524,31 +573,120 @@ if (canvas && typeof Chart !== "undefined") {
       scales: {
 
         x: {
+
           grid: {
             color: "#1a1a1a"
           },
 
           ticks: {
+
             color: "#888888",
+
+            maxRotation: 0,
+
+            autoSkip: true,
+
+            maxTicksLimit: 12,
+
             font: {
               family: "Fira Code",
               size: 10
             }
+
           }
+
         },
 
-        y: {
-          grid: {
-            color: "#1a1a1a"
+        yTemperatura: {
+
+          type: "linear",
+
+          position: "left",
+
+          title: {
+            display: true,
+            text: "Temperatura °C",
+            color: "#0099ff"
           },
 
           ticks: {
-            color: "#888888",
-            font: {
-              family: "Fira Code",
-              size: 10
-            }
+            color: "#0099ff"
+          },
+
+          grid: {
+            color: "#1a1a1a"
           }
+
+        },
+
+        yRPM: {
+
+          type: "linear",
+
+          position: "right",
+
+          title: {
+            display: true,
+            text: "RPM",
+            color: "#00e676"
+          },
+
+          ticks: {
+            color: "#00e676"
+          },
+
+          grid: {
+            drawOnChartArea: false
+          }
+
+        },
+
+        yCorrente: {
+
+          type: "linear",
+
+          position: "right",
+
+          offset: true,
+
+          title: {
+            display: true,
+            text: "Corrente A",
+            color: "#ffb300"
+          },
+
+          ticks: {
+            color: "#ffb300"
+          },
+
+          grid: {
+            drawOnChartArea: false
+          }
+
+        },
+
+        yVibracao: {
+
+          type: "linear",
+
+          position: "left",
+
+          offset: true,
+
+          title: {
+            display: true,
+            text: "Aceleração m/s²",
+            color: "#ff3333"
+          },
+
+          ticks: {
+            color: "#ff3333"
+          },
+
+          grid: {
+            drawOnChartArea: false
+          }
+
         }
 
       },
@@ -560,14 +698,22 @@ if (canvas && typeof Chart !== "undefined") {
           position: "bottom",
 
           labels: {
+
             color: "#cccccc",
 
             font: {
               family: "Plus Jakarta Sans",
               size: 11
             }
+
           }
 
+        },
+
+        tooltip: {
+          enabled: true,
+          mode: "index",
+          intersect: false
         }
 
       }
@@ -576,16 +722,14 @@ if (canvas && typeof Chart !== "undefined") {
 
   });
 
-} else {
-
-  console.error("Chart.js ou canvas não encontrado.");
+  console.log("[GRÁFICO] Inicializado.");
 
 }
 
 
-// ==============================================================================
-// ATUALIZACAO DOS INDICADORES
-// ==============================================================================
+/* ============================================================================
+   8. ATUALIZAÇÃO DOS CARDS
+============================================================================ */
 
 function atualizarCards(dado) {
 
@@ -597,7 +741,7 @@ function atualizarCards(dado) {
   const hora = formatarHora(dado.timestamp);
 
   document.getElementById("val-temp").textContent =
-    temperatura !== null ? temperatura.toFixed(1) : "--";
+    temperatura !== null ? temperatura.toFixed(2) : "--";
 
   document.getElementById("val-rpm").textContent =
     rpm !== null ? rpm.toLocaleString("pt-BR") : "--";
@@ -606,7 +750,7 @@ function atualizarCards(dado) {
     corrente !== null ? corrente.toFixed(2) : "--";
 
   document.getElementById("val-acel").textContent =
-    vibracao !== null ? vibracao.toFixed(2) : "--";
+    vibracao !== null ? vibracao.toFixed(3) : "--";
 
   document.getElementById("time-temp").textContent = hora;
   document.getElementById("time-rpm").textContent = hora;
@@ -643,16 +787,18 @@ function limparCards() {
 }
 
 
-// ==============================================================================
-// ATUALIZACAO DO GRAFICO
-// ==============================================================================
-
+/* ============================================================================
+   9. ATUALIZAÇÃO DO GRÁFICO
+============================================================================ */
 
 function atualizarGrafico(leituras) {
 
   if (!grafico) {
-    console.error("Gráfico Chart.js não foi inicializado.");
+
+    console.error("[GRÁFICO] Instância não inicializada.");
+
     return;
+
   }
 
   grafico.data.labels = leituras.map(
@@ -675,7 +821,6 @@ function atualizarGrafico(leituras) {
     dado => obterVibracao(dado)
   );
 
-  // Atualização imediata, sem esperar animação.
   grafico.update("none");
 
   console.log(
@@ -683,35 +828,148 @@ function atualizarGrafico(leituras) {
     leituras.length,
     "amostras."
   );
+
 }
 
 
-// ==============================================================================
-// ESTADO DO MOTOR
-// ==============================================================================
+/* ============================================================================
+   10. HISTÓRICO DAS ÚLTIMAS LEITURAS
+============================================================================ */
+
+function renderizarHistorico(leituras) {
+
+  const corpo = document.getElementById("history-body");
+
+  const contador = document.getElementById("history-count");
+
+  // A ausência da seção de histórico não interrompe o dashboard.
+  if (!corpo || !contador) {
+
+    console.warn("[HISTÓRICO] Elementos HTML não encontrados.");
+
+    return;
+
+  }
+
+  corpo.replaceChildren();
+
+  if (leituras.length === 0) {
+
+    const linha = document.createElement("tr");
+
+    const celula = document.createElement("td");
+
+    celula.colSpan = 6;
+
+    celula.className = "history-empty";
+
+    celula.textContent = "Aguardando primeiras leituras...";
+
+    linha.appendChild(celula);
+
+    corpo.appendChild(linha);
+
+    contador.textContent = "0 amostras";
+
+    return;
+
+  }
+
+  const recentes = [...leituras]
+    .reverse()
+    .slice(0, CONFIG.quantidadeHistorico);
+
+  recentes.forEach(dado => {
+
+    const linha = document.createElement("tr");
+
+    const origem = dado.modo === "simulacao"
+      ? "SIMULAÇÃO"
+      : "REAL";
+
+    const valores = [
+
+      formatarHora(dado.timestamp),
+
+      obterTemperatura(dado) !== null
+        ? obterTemperatura(dado).toFixed(2) + " °C"
+        : "--",
+
+      obterRPM(dado) !== null
+        ? obterRPM(dado).toLocaleString("pt-BR")
+        : "--",
+
+      obterCorrente(dado) !== null
+        ? obterCorrente(dado).toFixed(2) + " A"
+        : "--",
+
+      obterVibracao(dado) !== null
+        ? obterVibracao(dado).toFixed(3) + " m/s²"
+        : "--",
+
+      origem
+
+    ];
+
+    valores.forEach((valor, indice) => {
+
+      const celula = document.createElement("td");
+
+      celula.textContent = valor;
+
+      if (indice === 5) {
+        celula.className = "history-origin";
+      }
+
+      linha.appendChild(celula);
+
+    });
+
+    corpo.appendChild(linha);
+
+  });
+
+  contador.textContent =
+    `${leituras.length} amostras recebidas`;
+
+  console.log(
+    "[HISTÓRICO] Renderizadas",
+    recentes.length,
+    "amostras."
+  );
+
+}
+
+
+/* ============================================================================
+   11. ESTADO OPERACIONAL DO MOTOR
+============================================================================ */
 
 function identificarEstadoMotor(dado) {
 
   const rpm = obterRPM(dado);
+
   const corrente = obterCorrente(dado);
 
   if (rpm === null || corrente === null) {
     return "indeterminado";
   }
 
-  const temRotacao = rpm > CONFIG.rpmMinimoOperacao;
+  const rotacaoAtiva =
+    rpm > CONFIG.rpmMinimoOperacao;
 
-  const temCorrente = corrente > CONFIG.correnteMinimaOperacao;
+  const correnteAtiva =
+    corrente > CONFIG.correnteMinimaOperacao;
 
-  if (!temRotacao && !temCorrente) {
+  if (!rotacaoAtiva && !correnteAtiva) {
     return "parado";
   }
 
-  if (temRotacao && temCorrente) {
+  if (rotacaoAtiva && correnteAtiva) {
     return "operando";
   }
 
-  if (!temRotacao && temCorrente) {
+  if (!rotacaoAtiva && correnteAtiva) {
     return "corrente_sem_rotacao";
   }
 
@@ -720,40 +978,81 @@ function identificarEstadoMotor(dado) {
 }
 
 
-// ==============================================================================
-// REFERENCIA OPERACIONAL
-// ==============================================================================
+/* ============================================================================
+   12. REFERÊNCIA OPERACIONAL
+============================================================================ */
+
+function chaveDaSessao(dado) {
+
+  const modo = dado.modo || "real";
+
+  if (modo === "simulacao") {
+
+    return `simulacao:${dado.sessao_teste || "sem_sessao"}`;
+
+  }
+
+  return "real";
+
+}
 
 
 function capturarReferencia(leituras) {
 
-  if (referenciaOperacional !== null) {
-    atualizarEstadoReferencia(true, CONFIG.amostrasReferencia);
-    return referenciaOperacional;
-  }
-
   if (leituras.length === 0) return null;
 
-  const modoAtual = leituras[leituras.length - 1].modo;
+  const atual = leituras[leituras.length - 1];
+
+  const chaveAtual = chaveDaSessao(atual);
+
+  // Nova sessão exige nova referência.
+  if (identificadorReferencia !== chaveAtual) {
+
+    identificadorReferencia = chaveAtual;
+
+    referenciaOperacional = null;
+
+    console.log(
+      "[ANÁLISE] Nova sessão. Reiniciando referência."
+    );
+
+    atualizarEstadoReferencia(false, 0);
+
+  }
+
+  if (referenciaOperacional !== null) {
+
+    atualizarEstadoReferencia(
+      true,
+      CONFIG.amostrasReferencia
+    );
+
+    return referenciaOperacional;
+
+  }
 
   let amostrasValidas = leituras.filter(dado => {
 
+    const mesmaSessao =
+      chaveDaSessao(dado) === chaveAtual;
+
+    const semAnomaliasMarcadas =
+      !Array.isArray(dado.anomalias_ativas) ||
+      dado.anomalias_ativas.length === 0;
+
     return (
-      dado.modo === modoAtual &&
+      mesmaSessao &&
+      semAnomaliasMarcadas &&
       leituraCompleta(dado) &&
       identificarEstadoMotor(dado) === "operando"
     );
 
   });
 
-  // Nos testes, só usamos amostras da sessão atual.
-  if (modoAtual === "simulacao" && sessaoTesteAtual) {
-
-    amostrasValidas = amostrasValidas.filter(
-      dado => dado.sessao_teste === sessaoTesteAtual
-    );
-
-  }
+  amostrasValidas = amostrasValidas.slice(
+    0,
+    CONFIG.amostrasReferencia
+  );
 
   if (amostrasValidas.length < CONFIG.amostrasReferencia) {
 
@@ -763,101 +1062,85 @@ function capturarReferencia(leituras) {
     );
 
     return null;
-  }
 
-  const base = amostrasValidas.slice(
-    0,
-    CONFIG.amostrasReferencia
-  );
+  }
 
   referenciaOperacional = {
 
-    temperatura: mediana(base.map(obterTemperatura)),
+    temperatura: mediana(
+      amostrasValidas.map(obterTemperatura)
+    ),
 
-    rpm: mediana(base.map(obterRPM)),
+    rpm: mediana(
+      amostrasValidas.map(obterRPM)
+    ),
 
-    corrente: mediana(base.map(obterCorrente)),
+    corrente: mediana(
+      amostrasValidas.map(obterCorrente)
+    ),
 
-    vibracao: mediana(base.map(obterVibracao))
+    vibracao: mediana(
+      amostrasValidas.map(obterVibracao)
+    )
 
   };
 
   console.log(
-    "REFERÊNCIA OPERACIONAL:",
+    "[ANÁLISE] REFERÊNCIA OPERACIONAL ESTABELECIDA:",
     referenciaOperacional
   );
 
-  atualizarEstadoReferencia(true, CONFIG.amostrasReferencia);
+  atualizarEstadoReferencia(
+    true,
+    CONFIG.amostrasReferencia
+  );
 
   return referenciaOperacional;
 
 }
 
 
-// ==============================================================================
-// PAINEL DE DIAGNOSTICO
-// ==============================================================================
+function atualizarEstadoReferencia(pronta, quantidade) {
 
-function atualizarPainelDiagnostico(lista, nivel, textoSaude) {
+  const elemento = document.getElementById(
+    "test-reference-status"
+  );
 
-  const container = document.getElementById("diagnostic-container");
+  if (elemento) {
 
-  const badge = document.getElementById("health-badge");
+    elemento.textContent = pronta
+      ? "Referência estabelecida com 10 amostras normais. Testes de anomalia liberados."
+      : `Coletando referência: ${quantidade} de ${CONFIG.amostrasReferencia} amostras normais.`;
 
-  const texto = document.getElementById("health-text");
+  }
 
-  const contador = document.getElementById("diagnostic-count");
-
-  const classes = {
-
-    ok: "health-ok",
-
-    warning: "health-warning",
-
-    danger: "health-danger",
-
-    unknown: "health-unknown"
-
-  };
-
-  badge.className =
-    "badge " + (classes[nivel] || classes.unknown);
-
-  texto.textContent = textoSaude;
-
-  contador.textContent =
-    `${lista.length} ${lista.length === 1 ? "análise" : "análises"}`;
-
-  container.innerHTML = lista.map(item => `
-
-    <div class="diag-card ${item.nivel}">
-
-      <div class="diag-title">
-        ${item.titulo}
-      </div>
-
-      <div class="diag-desc">
-        <strong>Sensores:</strong> ${item.sensores}
-      </div>
-
-      <div class="diag-desc">
-        <strong>Resultado:</strong> ${item.causa}
-      </div>
-
-      <div class="diag-action">
-        <strong>Recomendação:</strong> ${item.acao}
-      </div>
-
-    </div>
-
-  `).join("");
+  atualizarInterfaceTeste();
 
 }
 
 
-// ==============================================================================
-// ANALISE DE MANUTENCAO
-// ==============================================================================
+/* ============================================================================
+   13. FILTRAR AMOSTRAS DA MESMA SESSÃO
+============================================================================ */
+
+function obterLeiturasDaSessao(leituras) {
+
+  if (leituras.length === 0) return [];
+
+  const ultima = leituras[leituras.length - 1];
+
+  const chaveAtual = chaveDaSessao(ultima);
+
+  return leituras.filter(dado =>
+    chaveDaSessao(dado) === chaveAtual
+  );
+
+}
+
+
+/* ============================================================================
+   14. MOTOR DE DIAGNÓSTICO
+============================================================================ */
 
 function analisarSaudeDoMotor(leituras) {
 
@@ -867,7 +1150,13 @@ function analisarSaudeDoMotor(leituras) {
 
   const atual = leituras[leituras.length - 1];
 
-  function adicionar(nivel, titulo, sensores, causa, acao) {
+  function adicionar(
+    nivel,
+    titulo,
+    sensores,
+    causa,
+    acao
+  ) {
 
     diagnosticos.push({
 
@@ -895,18 +1184,18 @@ function analisarSaudeDoMotor(leituras) {
   }
 
 
-  // --------------------------------------------------------------------------
-  // VERIFICACAO DOS SENSORES
-  // --------------------------------------------------------------------------
+  // --------------------------------------------------
+  // FALHAS DE SENSORES
+  // --------------------------------------------------
 
   if (atual.sensor_ds18b20_ok === false) {
 
     adicionar(
       "warning",
-      "FALHA DE LEITURA DE TEMPERATURA",
+      "FALHA NO SENSOR DE TEMPERATURA",
       "DS18B20",
-      "O ESP32 não conseguiu obter uma leitura válida do sensor.",
-      "Verificar alimentação, conexão de dados, resistor de pull-up e integridade do DS18B20."
+      "O sensor não forneceu uma leitura válida.",
+      "Verificar alimentação, cabeamento, resistor de pull-up, conexão DATA e integridade do sensor."
     );
 
   }
@@ -915,10 +1204,10 @@ function analisarSaudeDoMotor(leituras) {
 
     adicionar(
       "warning",
-      "FALHA DE COMUNICAÇÃO COM O MPU6050",
+      "FALHA DE COMUNICAÇÃO COM MPU6050",
       "MPU6050",
-      "A aquisição de aceleração não está disponível.",
-      "Verificar alimentação, endereço I2C, conexões SDA/SCL e fixação da placa."
+      "Não foi possível obter uma leitura válida de aceleração.",
+      "Verificar alimentação, endereço I2C, SDA, SCL e fixação do módulo."
     );
 
   }
@@ -927,39 +1216,41 @@ function analisarSaudeDoMotor(leituras) {
 
     adicionar(
       "warning",
-      "LEITURA ANALÓGICA DO ACS712 INVÁLIDA",
+      "FALHA DE LEITURA DO ACS712",
       "ACS712",
-      "A leitura do canal analógico não está dentro da faixa esperada.",
-      "Verificar alimentação, divisor de tensão, GND comum e ligação da saída analógica."
+      "A leitura analógica foi considerada inválida.",
+      "Verificar alimentação, divisor de tensão, aterramento, saída analógica e calibração."
+    );
+
+  }
+
+  if (atual.sensor_hall_ok === false) {
+
+    adicionar(
+      "warning",
+      "FALHA NO SENSOR HALL",
+      "Sensor Hall",
+      "A contagem de pulsos está indisponível.",
+      "Verificar alimentação, saída digital, posição do ímã e conexão ao ESP32."
     );
 
   }
 
 
-  // --------------------------------------------------------------------------
-  // REFERENCIA OPERACIONAL
-  // --------------------------------------------------------------------------
+  // --------------------------------------------------
+  // REFERÊNCIA
+  // --------------------------------------------------
 
   const referencia = capturarReferencia(leituras);
 
   if (referencia === null) {
 
-    const quantidade = leituras.filter(dado => {
-
-      return (
-        dado.modo !== "simulacao" &&
-        leituraCompleta(dado) &&
-        identificarEstadoMotor(dado) === "operando"
-      );
-
-    }).length;
-
     adicionar(
       "ok",
       "COLETANDO REFERÊNCIA OPERACIONAL",
       "DS18B20 + Hall + ACS712 + MPU6050",
-      `Foram obtidas ${quantidade} de ${CONFIG.amostrasReferencia} amostras completas em operação.`,
-      "Manter o motor em condição normal e estável para formar a referência. Não interpretar esta etapa como diagnóstico de saúde."
+      `São necessárias ${CONFIG.amostrasReferencia} amostras completas de operação normal.`,
+      "Manter o motor em condição estável durante a coleta. Os alertas relativos serão habilitados quando a referência estiver pronta."
     );
 
     return {
@@ -971,26 +1262,25 @@ function analisarSaudeDoMotor(leituras) {
   }
 
 
-  // --------------------------------------------------------------------------
-  // DETECCAO DE ANOMALIAS PERSISTENTES
-  // --------------------------------------------------------------------------
+  // --------------------------------------------------
+  // DETECÇÃO PERSISTENTE DE TEMPERATURA
+  // --------------------------------------------------
 
   const temperaturaAlta = persistenciaConfirmada(
-
     leituras,
     obterTemperatura,
-
     valor => valor >=
       referencia.temperatura + CONFIG.aumentoTemperatura
-
   );
 
 
-  const correnteAlta = persistenciaConfirmada(
+  // --------------------------------------------------
+  // DETECÇÃO PERSISTENTE DE CORRENTE
+  // --------------------------------------------------
 
+  const correnteAlta = persistenciaConfirmada(
     leituras,
     obterCorrente,
-
     valor => {
 
       const limitePercentual =
@@ -1007,27 +1297,29 @@ function analisarSaudeDoMotor(leituras) {
       );
 
     }
-
   );
 
 
-  const rpmBaixo = persistenciaConfirmada(
+  // --------------------------------------------------
+  // DETECÇÃO PERSISTENTE DE RPM
+  // --------------------------------------------------
 
+  const rpmBaixo = persistenciaConfirmada(
     leituras,
     obterRPM,
-
     valor => valor <=
       referencia.rpm *
       (1 - CONFIG.quedaRPMPercentual)
-
   );
 
 
-  const vibracaoAlta = persistenciaConfirmada(
+  // --------------------------------------------------
+  // DETECÇÃO PERSISTENTE DE VIBRAÇÃO
+  // --------------------------------------------------
 
+  const vibracaoAlta = persistenciaConfirmada(
     leituras,
     obterVibracao,
-
     valor => {
 
       const limitePercentual =
@@ -1044,13 +1336,12 @@ function analisarSaudeDoMotor(leituras) {
       );
 
     }
-
   );
 
 
-  // --------------------------------------------------------------------------
+  // --------------------------------------------------
   // CORRENTE + RPM
-  // --------------------------------------------------------------------------
+  // --------------------------------------------------
 
   if (correnteAlta && rpmBaixo) {
 
@@ -1058,10 +1349,8 @@ function analisarSaudeDoMotor(leituras) {
       "warning",
       "AUMENTO DE CARGA COM REDUÇÃO DE ROTAÇÃO",
       "ACS712 + Hall",
-
-      "A corrente RMS aumentou enquanto a rotação caiu de forma persistente. O comportamento pode estar associado a aumento da carga acionada, atrito mecânico, problema no acionamento ou erro de medição.",
-
-      "Conferir corrente nominal, alimentação elétrica, carga, acoplamento, rolamentos e rotação com instrumentos independentes. Verificar também se o sensor Hall está contando todos os pulsos."
+      "A corrente RMS aumentou enquanto a rotação caiu persistentemente. Pode haver aumento de carga, atrito mecânico ou alteração no acionamento.",
+      "Verificar corrente nominal, alimentação, carga acionada, acoplamento e rolamentos. Confirmar RPM com tacômetro independente."
     );
 
   } else {
@@ -1072,10 +1361,8 @@ function analisarSaudeDoMotor(leituras) {
         "warning",
         "AUMENTO PERSISTENTE DE CORRENTE",
         "ACS712",
-
-        "A corrente RMS ficou acima da referência operacional. Pode indicar aumento da carga, alteração de alimentação ou mudança nas condições de acionamento.",
-
-        "Comparar com a corrente nominal da placa do motor e com um alicate amperímetro. Investigar carga mecânica, conexões, tensão e condições do acionamento."
+        "A corrente RMS permaneceu acima da referência operacional.",
+        "Comparar com a corrente nominal da placa do motor e alicate amperímetro. Investigar carga, tensão, conexões e acionamento."
       );
 
     }
@@ -1086,10 +1373,8 @@ function analisarSaudeDoMotor(leituras) {
         "warning",
         "REDUÇÃO PERSISTENTE DE ROTAÇÃO",
         "Sensor Hall",
-
-        "A rotação ficou abaixo da referência. A causa pode estar na carga, no acionamento, na transmissão mecânica ou na aquisição dos pulsos.",
-
-        "Verificar ímã, distância do sensor Hall, pulsos por volta, rotação com tacômetro independente e condições da carga."
+        "A rotação permaneceu abaixo da referência operacional.",
+        "Verificar carga mecânica, acionamento, posição do ímã, distância do sensor e contagem de pulsos."
       );
 
     }
@@ -1097,9 +1382,9 @@ function analisarSaudeDoMotor(leituras) {
   }
 
 
-  // --------------------------------------------------------------------------
+  // --------------------------------------------------
   // TEMPERATURA
-  // --------------------------------------------------------------------------
+  // --------------------------------------------------
 
   if (temperaturaAlta) {
 
@@ -1107,18 +1392,16 @@ function analisarSaudeDoMotor(leituras) {
       "warning",
       "ELEVAÇÃO PERSISTENTE DE TEMPERATURA",
       "DS18B20",
-
-      "A temperatura subiu pelo menos 4 °C em relação à referência operacional e permaneceu elevada nas três últimas amostras.",
-
-      "Inspecionar ventilação, aletas, fluxo de ar, carga mecânica e contato físico do sensor. Comparar a leitura com o limite térmico especificado pelo fabricante."
+      "A temperatura permaneceu pelo menos 4 °C acima da referência operacional.",
+      "Inspecionar ventilação, fluxo de ar, aletas, carga mecânica e fixação do sensor. Comparar com a temperatura admissível do fabricante."
     );
 
   }
 
 
-  // --------------------------------------------------------------------------
+  // --------------------------------------------------
   // TEMPERATURA + CORRENTE
-  // --------------------------------------------------------------------------
+  // --------------------------------------------------
 
   if (temperaturaAlta && correnteAlta) {
 
@@ -1126,53 +1409,47 @@ function analisarSaudeDoMotor(leituras) {
       "warning",
       "AQUECIMENTO ASSOCIADO AO AUMENTO DE CORRENTE",
       "DS18B20 + ACS712",
-
-      "O aumento de temperatura acompanha o crescimento da corrente RMS. A combinação pode indicar aumento de solicitação do motor ou dissipação térmica insuficiente.",
-
-      "Verificar carga, ventilação, conexões elétricas e rolamentos. Confirmar as leituras antes de concluir que existe sobrecarga."
+      "A temperatura aumentou ao mesmo tempo que a corrente RMS. Pode existir aumento de carga ou dissipação térmica insuficiente.",
+      "Verificar carga, ventilação, conexões elétricas e rolamentos. Confirmar as medições antes de concluir que há sobrecarga."
     );
 
   }
 
 
-  // --------------------------------------------------------------------------
-  // VIBRACAO
-  // --------------------------------------------------------------------------
+  // --------------------------------------------------
+  // VIBRAÇÃO
+  // --------------------------------------------------
 
   if (vibracaoAlta) {
 
     adicionar(
       "warning",
-      "AUMENTO PERSISTENTE DA ACELERAÇÃO",
+      "AUMENTO PERSISTENTE DE ACELERAÇÃO",
       "MPU6050",
-
-      "A aceleração RMS dinâmica no eixo Z ultrapassou a referência em mais de 50%, com acréscimo mínimo de 0,30 m/s².",
-
-      "Conferir fixação do MPU6050, base, acoplamento e rolamentos. Complementar a medição com os três eixos e análise de frequência antes de atribuir a causa a um componente específico."
+      "A aceleração RMS dinâmica no eixo Z ultrapassou a referência operacional.",
+      "Verificar fixação do sensor, base, acoplamento e rolamentos. Complementar com os três eixos e análise de frequência."
     );
 
   }
 
 
-  // --------------------------------------------------------------------------
-  // INSTABILIDADE DA ROTACAO
-  // --------------------------------------------------------------------------
+  // --------------------------------------------------
+  // INSTABILIDADE
+  // --------------------------------------------------
 
   if (leituras.length >= 5) {
 
     const ultimas = leituras.slice(-5);
 
-    const rpms = ultimas
-      .map(obterRPM)
-      .filter(v => v !== null);
+    const valoresRPM = ultimas.map(obterRPM);
 
-    const correntes = ultimas
-      .map(obterCorrente)
-      .filter(v => v !== null);
+    const valoresCorrente = ultimas.map(obterCorrente);
 
-    const variacaoRPM = coeficienteVariacao(rpms);
+    const variacaoRPM = coeficienteVariacao(valoresRPM);
 
-    const variacaoCorrente = coeficienteVariacao(correntes);
+    const variacaoCorrente =
+      coeficienteVariacao(valoresCorrente);
+
 
     if (
       identificarEstadoMotor(atual) === "operando" &&
@@ -1183,13 +1460,12 @@ function analisarSaudeDoMotor(leituras) {
         "warning",
         "OSCILAÇÃO DE ROTAÇÃO",
         "Sensor Hall",
-
-        "A rotação apresentou variação relativa superior a 8% nas últimas cinco amostras.",
-
-        "Investigar variação da carga, acionamento, alimentação e qualidade da contagem de pulsos do sensor Hall."
+        "A rotação apresentou variação relativa acima do limite experimental nas últimas cinco amostras.",
+        "Investigar variação de carga, acionamento, alimentação e qualidade da contagem de pulsos."
       );
 
     }
+
 
     if (
       identificarEstadoMotor(atual) === "operando" &&
@@ -1200,10 +1476,8 @@ function analisarSaudeDoMotor(leituras) {
         "warning",
         "OSCILAÇÃO DE CORRENTE",
         "ACS712",
-
-        "A corrente RMS apresentou variação relativa superior a 20% nas últimas cinco amostras.",
-
-        "Verificar variação da carga, alimentação, conexões e estabilidade do acionamento. Confirmar a medição com instrumento independente."
+        "A corrente RMS apresentou variação relativa elevada nas últimas cinco amostras.",
+        "Verificar carga, alimentação elétrica, conexões e estabilidade do acionamento."
       );
 
     }
@@ -1211,20 +1485,18 @@ function analisarSaudeDoMotor(leituras) {
   }
 
 
-  // --------------------------------------------------------------------------
-  // NENHUMA ANOMALIA
-  // --------------------------------------------------------------------------
+  // --------------------------------------------------
+  // NORMALIDADE
+  // --------------------------------------------------
 
   if (diagnosticos.length === 0) {
 
     adicionar(
       "ok",
       "SEM DESVIOS PERSISTENTES IDENTIFICADOS",
-      "DS18B20 + Hall + ACS712 + MPU6050",
-
-      "Os parâmetros recebidos não apresentaram os desvios configurados em relação à referência operacional.",
-
-      "Manter o acompanhamento das leituras e registrar as condições normais de operação. A ausência de desvios não comprova ausência de falhas."
+      "Todos os sensores",
+      "Os parâmetros monitorados permaneceram próximos da referência operacional.",
+      "Manter acompanhamento periódico e registrar as condições normais de operação. A ausência de anomalias não comprova ausência de falhas."
     );
 
   }
@@ -1239,67 +1511,170 @@ function analisarSaudeDoMotor(leituras) {
 }
 
 
-// ==============================================================================
-// ATUALIZACAO DO PAINEL
-// ==============================================================================
+/* ============================================================================
+   15. PAINEL DE DIAGNÓSTICO
+============================================================================ */
 
-function tratarEstadoSemSinal(mensagem) {
+function atualizarPainelDiagnostico(lista, nivel, mensagem) {
 
-  document.getElementById("health-badge").className =
-    "badge health-unknown";
+  const container =
+    document.getElementById("diagnostic-container");
 
-  document.getElementById("health-text").textContent =
-    mensagem;
+  const badge =
+    document.getElementById("health-badge");
 
-  document.getElementById("diagnostic-count").textContent =
-    "Sem medições recentes";
+  const texto =
+    document.getElementById("health-text");
 
-  document.getElementById("diagnostic-container").innerHTML = `
+  const contador =
+    document.getElementById("diagnostic-count");
 
-    <div class="diag-card">
+  if (!container || !badge || !texto || !contador) {
+    return;
+  }
 
-      <div class="diag-title">
-        ${mensagem.toUpperCase()}
-      </div>
+  const classes = {
 
-      <div class="diag-desc">
-        Não há dados recentes suficientes para avaliar a condição do motor.
-      </div>
+    ok: "health-ok",
+    warning: "health-warning",
+    danger: "health-danger",
+    unknown: "health-unknown"
 
-      <div class="diag-action">
-        Verificar ESP32, Wi-Fi, Firebase e disponibilidade dos sensores.
-      </div>
+  };
 
-    </div>
+  badge.className =
+    "badge " + (classes[nivel] || classes.unknown);
 
-  `;
+  texto.textContent = mensagem;
+
+  contador.textContent =
+    `${lista.length} ${lista.length === 1 ? "análise" : "análises"}`;
+
+  container.replaceChildren();
+
+  lista.forEach(item => {
+
+    const card = document.createElement("div");
+
+    card.className = `diag-card ${item.nivel}`;
+
+    const titulo = document.createElement("div");
+
+    titulo.className = "diag-title";
+
+    titulo.textContent = item.titulo;
+
+    const sensores = document.createElement("div");
+
+    sensores.className = "diag-desc";
+
+    sensores.textContent =
+      "Sensores: " + item.sensores;
+
+    const causa = document.createElement("div");
+
+    causa.className = "diag-desc";
+
+    causa.textContent =
+      "Relatório: " + item.causa;
+
+    const acao = document.createElement("div");
+
+    acao.className = "diag-action";
+
+    acao.textContent =
+      "Manutenção recomendada: " + item.acao;
+
+    card.append(
+      titulo,
+      sensores,
+      causa,
+      acao
+    );
+
+    container.appendChild(card);
+
+  });
 
 }
 
 
-// ==============================================================================
-// PROCESSAMENTO DE CADA ATUALIZACAO
-// ==============================================================================
+/* ============================================================================
+   16. ESTADOS SEM DADOS
+============================================================================ */
+
+function mostrarSemDados(mensagem) {
+
+  const badge =
+    document.getElementById("health-badge");
+
+  const texto =
+    document.getElementById("health-text");
+
+  const contador =
+    document.getElementById("diagnostic-count");
+
+  const container =
+    document.getElementById("diagnostic-container");
+
+  if (badge) badge.className = "badge health-unknown";
+
+  if (texto) texto.textContent = mensagem;
+
+  if (contador) contador.textContent = "Sem medições recentes";
+
+  if (container) {
+
+    container.replaceChildren();
+
+    const card = document.createElement("div");
+
+    card.className = "diag-card";
+
+    const titulo = document.createElement("div");
+
+    titulo.className = "diag-title";
+
+    titulo.textContent = mensagem.toUpperCase();
+
+    const descricao = document.createElement("div");
+
+    descricao.className = "diag-desc";
+
+    descricao.textContent =
+      "Não há dados recentes suficientes para avaliar a condição do motor.";
+
+    const acao = document.createElement("div");
+
+    acao.className = "diag-action";
+
+    acao.textContent =
+      "Verificar conexão, ESP32 e transmissão de dados ao Firebase.";
+
+    card.append(titulo, descricao, acao);
+
+    container.appendChild(card);
+
+  }
+
+}
+
+
+/* ============================================================================
+   17. PROCESSAMENTO PRINCIPAL DO DASHBOARD
+============================================================================ */
 
 function processarLeituras(leituras) {
 
-  if (leituras.length === 0) {
+  if (!Array.isArray(leituras) || leituras.length === 0) {
 
     limparCards();
 
-    if (grafico) {
+    atualizarGrafico([]);
 
-      grafico.data.labels = [];
+    renderizarHistorico([]);
 
-      grafico.data.datasets.forEach(dataset => {
-        dataset.data = [];
-      });
-
-      grafico.update();
-
-    }
-
-    tratarEstadoSemSinal("Aguardando leituras do ESP32");
+    mostrarSemDados("Aguardando leituras do ESP32");
 
     return;
 
@@ -1307,90 +1682,111 @@ function processarLeituras(leituras) {
 
   const atual = leituras[leituras.length - 1];
 
+
+  // Atualiza simultaneamente os elementos visuais.
   atualizarCards(atual);
 
   atualizarGrafico(leituras);
 
   renderizarHistorico(leituras);
 
-  // Não aceitar dados antigos de simulação como telemetria física.
 
-  if (atual.modo === "simulacao") {
+  // A análise utiliza somente a sessão atual.
+  const leiturasSessao = obterLeiturasDaSessao(leituras);
 
-    tratarEstadoSemSinal(
-      "O ESP32 ainda está enviando dados simulados"
-    );
+  const resultado = analisarSaudeDoMotor(leiturasSessao);
 
-    return;
+  const estado = identificarEstadoMotor(atual);
 
-  }
-
-  const resultado = analisarSaudeDoMotor(leituras);
-
-  const estadoMotor = identificarEstadoMotor(atual);
-
-  const lista = resultado.diagnosticos;
+  const diagnosticos = [...resultado.diagnosticos];
 
   let nivel = resultado.nivelMaximo;
 
-  let textoSaude = "Monitoramento em análise";
+  let mensagem = "";
 
 
-  if (estadoMotor === "parado") {
+  const simulado = atual.modo === "simulacao";
 
-    textoSaude = "Motor parado";
+
+  if (simulado) {
+
+    diagnosticos.unshift({
+
+      nivel: "ok",
+
+      titulo: "MODO DE SIMULAÇÃO ATIVO",
+
+      sensores: "Dados artificiais",
+
+      causa: "Os valores são produzidos por software e não representam medições físicas.",
+
+      acao: "Utilizar exclusivamente para testar comunicação, gráficos e lógica de diagnóstico. Não utilizar para manutenção real."
+
+    });
+
+  }
+
+
+  if (estado === "operando") {
+
+    if (nivel === "danger") {
+
+      mensagem = "Prioridade alta de inspeção";
+
+    } else if (nivel === "warning") {
+
+      mensagem = "Desvio detectado";
+
+    } else if (resultado.referencia === null) {
+
+      mensagem = "Coletando referência";
+
+    } else {
+
+      mensagem = simulado
+        ? "Simulação: motor em operação"
+        : "Motor em operação";
+
+    }
+
+  } else if (estado === "parado") {
+
+    mensagem = "Motor parado";
 
     if (nivel === "ok") {
       nivel = "unknown";
     }
 
-  } else if (estadoMotor === "operando") {
+  } else if (estado === "corrente_sem_rotacao") {
 
-    if (nivel === "danger") {
-      textoSaude = "Prioridade alta";
-    } else if (nivel === "warning") {
-      textoSaude = "Desvio detectado";
-    } else if (!resultado.referencia) {
-      textoSaude = "Coletando referência";
-    } else {
-      textoSaude = "Motor em operação";
-    }
-
-  } else if (estadoMotor === "corrente_sem_rotacao") {
-
-    textoSaude = "Corrente presente sem rotação";
+    mensagem = "Corrente presente sem rotação";
 
     nivel = "warning";
 
-    lista.unshift({
+    diagnosticos.unshift({
 
       nivel: "warning",
 
-      titulo: "VERIFICAR POSSÍVEL BLOQUEIO OU FALHA DE ROTAÇÃO",
+      titulo: "POSSÍVEL BLOQUEIO OU FALHA DE ROTAÇÃO",
 
       sensores: "ACS712 + Hall",
 
-      causa: "Existe corrente detectável, mas a rotação está abaixo do limite de operação configurado. Pode ser uma condição anormal do motor ou falha no sensor Hall.",
+      causa: "Existe corrente detectável, mas a rotação está abaixo do limite operacional configurado.",
 
-      acao: "Verificar a condição real do motor, o acionamento e a alimentação elétrica. Conferir o sensor Hall antes de concluir que existe bloqueio mecânico."
+      acao: "Verificar alimentação, acionamento, carga mecânica e funcionamento do sensor Hall."
 
     });
 
   } else {
 
-    textoSaude = "Leituras inconsistentes";
-
-    if (nivel === "ok") nivel = "warning";
+    mensagem = "Estado operacional indeterminado";
 
   }
 
 
-  if (
-    !leituraCompleta(atual) &&
-    !lista.some(item => item.titulo === "TELEMETRIA INCOMPLETA")
-  ) {
+  if (!leituraCompleta(atual)) {
 
-    lista.unshift({
+    diagnosticos.unshift({
 
       nivel: "warning",
 
@@ -1398,9 +1794,9 @@ function processarLeituras(leituras) {
 
       sensores: "Um ou mais canais",
 
-      causa: "Não foi possível obter todos os valores necessários para uma avaliação integrada.",
+      causa: "Um ou mais parâmetros não foram recebidos corretamente.",
 
-      acao: "Conferir sensores, alimentação, fiação e comunicação."
+      acao: "Verificar sensores, alimentação, fiação e comunicação."
 
     });
 
@@ -1410,67 +1806,64 @@ function processarLeituras(leituras) {
 
 
   atualizarPainelDiagnostico(
-    lista,
+    diagnosticos,
     nivel,
-    textoSaude
+    mensagem
   );
 
 
-  console.log("Última leitura:", atual);
+  console.log("[DASHBOARD] Última leitura:", atual);
 
-  console.log("Estado do motor:", estadoMotor);
+  console.log("[DASHBOARD] Quantidade de amostras:", leituras.length);
 
-  console.log("Referência operacional:", referenciaOperacional);
+  console.log("[ANÁLISE] Estado do motor:", estado);
 
-  console.log("Relatório de condição:", lista);
+  console.log("[ANÁLISE] Referência:", referenciaOperacional);
+
+  console.log("[ANÁLISE] Diagnósticos:", diagnosticos);
 
 }
 
 
-// ==============================================================================
-// ESCUTA DO FIREBASE EM TEMPO REAL
-// ==============================================================================
-
+/* ============================================================================
+   18. ESCUTA DO FIREBASE EM TEMPO REAL
+============================================================================ */
 
 function escutarLeiturasEmTempoReal() {
 
-  console.log("[FIREBASE] Iniciando monitoramento de /leituras...");
+  console.log("[FIREBASE] Monitorando /leituras...");
 
-  const consulta = database
-    .ref("leituras")
-    .orderByKey()
-    .limitToLast(CONFIG.quantidadeAmostras);
-
-  consulta.on("value", snapshot => {
+  leiturasRef.on("value", snapshot => {
 
     console.log(
-      "[FIREBASE] Snapshot recebido:",
-      snapshot.numChildren(),
-      "registros."
+      "[FIREBASE] Registros encontrados:",
+      snapshot.numChildren()
     );
 
     const leituras = obterLeituras(snapshot);
 
-    console.log("QUANTIDADE DE LEITURAS:", leituras.length);
-
-console.table(leituras.map(dado => ({
-  horario: formatarHora(dado.timestamp),
-  temperatura: obterTemperatura(dado),
-  rpm: obterRPM(dado),
-  corrente: obterCorrente(dado),
-  vibracao: obterVibracao(dado),
-  modo: dado.modo
-})));
-
-
-    console.log("[FIREBASE] Leituras interpretadas:", leituras);
+    console.log(
+      "[FIREBASE] Amostras interpretadas:",
+      leituras.length
+    );
 
     if (leituras.length > 0) {
 
-      console.log(
-        "[FIREBASE] Última leitura:",
-        leituras[leituras.length - 1]
-      );
+      console.table(leituras.map(dado => ({
+
+        horario: formatarHora(dado.timestamp),
+
+        temperatura: obterTemperatura(dado),
+
+        rpm: obterRPM(dado),
+
+        corrente: obterCorrente(dado),
+
+        vibracao: obterVibracao(dado),
+
+        modo: dado.modo
+
+      })));
 
     }
 
@@ -1484,25 +1877,23 @@ console.table(leituras.map(dado => ({
 
     console.error("[FIREBASE] ERRO DE LEITURA:", erro);
 
-    mostrarSemDados(
-      "Erro ao receber dados do Firebase"
-    );
+    mostrarSemDados("Erro ao receber dados do Firebase");
 
   });
 
 }
 
 
-
-// ==============================================================================
-// TIMEOUT DE TELEMETRIA
-// ==============================================================================
+/* ============================================================================
+   19. MONITORAMENTO DE TIMEOUT
+============================================================================ */
 
 setInterval(() => {
 
   if (ultimoRecebimento === null) return;
 
-  const tempoSemDados = Date.now() - ultimoRecebimento;
+  const tempoSemDados =
+    Date.now() - ultimoRecebimento;
 
   if (
     tempoSemDados > CONFIG.intervaloTimeout &&
@@ -1511,8 +1902,10 @@ setInterval(() => {
 
     alertaTimeoutExibido = true;
 
-    tratarEstadoSemSinal(
-      "Sinal de telemetria interrompido"
+    mostrarSemDados("Sinal de telemetria interrompido");
+
+    console.warn(
+      "[FIREBASE] Nenhuma amostra nova recebida dentro do intervalo."
     );
 
   }
@@ -1520,147 +1913,110 @@ setInterval(() => {
 }, 2000);
 
 
-// ==============================================================================
-// INICIALIZACAO
-// ==============================================================================
-
-monitorarStatusConexao();
-
-escutarLeiturasEmTempoReal();
-
-console.log("MoniMotor iniciado.");
-
-// ==============================================================================
-// MONIMOTOR: AMBIENTE DE TESTES
-// ==============================================================================
-
-const INTERVALO_TESTE_MS = 5000;
-
-// Estado do simulador.
-
-let simulacaoAtiva = false;
-let simulacaoTimer = null;
-let inicioSimulacao = 0;
-let contadorTeste = 0;
-let enviandoSimulacao = false;
-
-// Anomalias independentes.
-
-const anomaliasTeste = {
-
-  temperatura: false,
-
-  rpm: false,
-
-  corrente: false,
-
-  vibracao: false
-
-};
-
-
-// ==============================================================================
-// GERENCIAMENTO DA INTERFACE DE TESTES
-// ==============================================================================
+/* ============================================================================
+   20. AMBIENTE DE TESTES: INTERFACE
+============================================================================ */
 
 function atualizarInterfaceTeste() {
 
-  const badge = document.getElementById("test-mode-status");
+  const badge =
+    document.getElementById("test-mode-status");
 
-  const botao = document.getElementById("test-toggle-button");
+  const botao =
+    document.getElementById("test-toggle-button");
 
-  const reset = document.getElementById("test-reset-button");
+  const reset =
+    document.getElementById("test-reset-button");
 
-  if (!badge || !botao || !reset) return;
+  if (badge) {
 
-  badge.textContent = simulacaoAtiva
-    ? "Simulação ativa"
-    : "Simulação inativa";
+    badge.textContent = simulacaoAtiva
+      ? "Simulação ativa"
+      : "Simulação inativa";
 
-  badge.className = simulacaoAtiva
-    ? "badge online"
-    : "badge health-unknown";
-
-  botao.textContent = simulacaoAtiva
-    ? "Interromper simulação (ESPAÇO)"
-    : "Iniciar simulação (ESPAÇO)";
-
-  botao.classList.toggle("running", simulacaoAtiva);
-
-  const referenciaPronta = referenciaOperacional !== null;
-
-  document.querySelectorAll(".test-anomaly-button").forEach(botaoAnomalia => {
-
-    const tipo = botaoAnomalia.dataset.anomalia;
-
-    const ativa = Boolean(anomaliasTeste[tipo]);
-
-    botaoAnomalia.disabled =
-      !simulacaoAtiva || !referenciaPronta;
-
-    botaoAnomalia.classList.toggle("active", ativa);
-
-    botaoAnomalia.setAttribute(
-      "aria-pressed",
-      String(ativa)
-    );
-
-    const titulos = {
-      temperatura: "Temperatura elevada",
-      rpm: "Queda de rotação",
-      corrente: "Sobrecorrente",
-      vibracao: "Vibração elevada"
-    };
-
-    botaoAnomalia.querySelector("strong").textContent =
-      ativa
-        ? titulos[tipo] + " [ATIVA]"
-        : titulos[tipo];
-
-  });
-
-  reset.disabled = !simulacaoAtiva;
-
-}
-
-
-function atualizarEstadoReferencia(pronta, quantidade) {
-
-  const elemento = document.getElementById(
-    "test-reference-status"
-  );
-
-  if (!elemento) return;
-
-  if (pronta) {
-
-    elemento.textContent =
-      "Referência estabelecida com 10 amostras normais. Os testes de anomalia estão liberados.";
-
-  } else {
-
-    elemento.textContent =
-      `Coletando referência: ${quantidade} de ${CONFIG.amostrasReferencia} amostras normais.`;
+    badge.className = simulacaoAtiva
+      ? "badge online"
+      : "badge health-unknown";
 
   }
 
-  atualizarInterfaceTeste();
+  if (botao) {
+
+    botao.textContent = simulacaoAtiva
+      ? "Interromper simulação (ESPAÇO)"
+      : "Iniciar simulação (ESPAÇO)";
+
+    botao.classList.toggle(
+      "running",
+      simulacaoAtiva
+    );
+
+  }
+
+  if (reset) {
+    reset.disabled = !simulacaoAtiva;
+  }
+
+  const referenciaPronta =
+    referenciaOperacional !== null;
+
+  document
+    .querySelectorAll(".test-anomaly-button")
+    .forEach(botaoAnomalia => {
+
+      const tipo = botaoAnomalia.dataset.anomalia;
+
+      const ativa = Boolean(anomaliasTeste[tipo]);
+
+      botaoAnomalia.disabled =
+        !simulacaoAtiva || !referenciaPronta;
+
+      botaoAnomalia.classList.toggle(
+        "active",
+        ativa
+      );
+
+      botaoAnomalia.setAttribute(
+        "aria-pressed",
+        String(ativa)
+      );
+
+      const titulos = {
+
+        temperatura: "Temperatura elevada",
+        rpm: "Queda de rotação",
+        corrente: "Sobrecorrente",
+        vibracao: "Vibração elevada"
+
+      };
+
+      const titulo = botaoAnomalia.querySelector("strong");
+
+      if (titulo) {
+
+        titulo.textContent = ativa
+          ? titulos[tipo] + " [ATIVA]"
+          : titulos[tipo];
+
+      }
+
+    });
 
 }
 
 
-// ==============================================================================
-// GERACAO DE DADOS SIMULADOS
-// ==============================================================================
+/* ============================================================================
+   21. GERAÇÃO DE DADOS SIMULADOS
+============================================================================ */
 
 function gerarDadosSimulados() {
 
-  const tempo = (Date.now() - inicioSimulacao) / 1000;
+  const tempo =
+    (Date.now() - inicioSimulacao) / 1000;
 
-  // --------------------------------------------------------------------------
-  // CENARIO NORMAL
-  // Motor de indução de quatro polos, 60 Hz.
-  // --------------------------------------------------------------------------
+  // --------------------------------------------------
+  // CONDIÇÃO NORMAL
+  // --------------------------------------------------
 
   let temperatura =
     45.0 +
@@ -1683,65 +2039,71 @@ function gerarDadosSimulados() {
     0.02 * Math.sin(tempo * 0.31);
 
 
-  // --------------------------------------------------------------------------
+  // --------------------------------------------------
   // ANOMALIA: TEMPERATURA
-  // --------------------------------------------------------------------------
+  // --------------------------------------------------
 
   if (anomaliasTeste.temperatura) {
 
     temperatura =
-      53.0 + 0.20 * Math.sin(tempo * 0.10);
+      53.0 +
+      0.20 * Math.sin(tempo * 0.10);
 
   }
 
 
-  // --------------------------------------------------------------------------
+  // --------------------------------------------------
   // ANOMALIA: RPM
-  // --------------------------------------------------------------------------
+  // --------------------------------------------------
 
   if (anomaliasTeste.rpm) {
 
     rpm =
-      1450 + 4 * Math.sin(tempo * 0.25);
+      1450 +
+      4 * Math.sin(tempo * 0.25);
 
   }
 
 
-  // --------------------------------------------------------------------------
+  // --------------------------------------------------
   // ANOMALIA: CORRENTE
-  // --------------------------------------------------------------------------
+  // --------------------------------------------------
 
   if (anomaliasTeste.corrente) {
 
     corrente =
-      13.2 + 0.10 * Math.sin(tempo * 0.50);
+      13.2 +
+      0.10 * Math.sin(tempo * 0.50);
 
   }
 
 
-  // --------------------------------------------------------------------------
-  // ANOMALIA: VIBRACAO
-  // --------------------------------------------------------------------------
+  // --------------------------------------------------
+  // ANOMALIA: VIBRAÇÃO
+  // --------------------------------------------------
 
   if (anomaliasTeste.vibracao) {
 
     vibracaoRMS =
-      1.75 + 0.04 * Math.sin(tempo * 0.70);
+      1.75 +
+      0.04 * Math.sin(tempo * 0.70);
 
   }
 
 
-  // Pico ilustrativo, sempre acima do RMS.
   const vibracaoPico =
     vibracaoRMS * 1.65 +
     0.04 * Math.abs(Math.sin(tempo * 1.10));
 
 
-  // Um ímã = um pulso por volta.
-  // Contagem correspondente ao intervalo de cinco segundos.
+  // Um ímã: um pulso por volta.
   const pulsosHall = Math.round(
-    rpm * (INTERVALO_TESTE_MS / 60000)
+    rpm * CONFIG.intervaloSimulacao / 60000
   );
+
+
+  const anomaliasAtivas = Object.keys(anomaliasTeste)
+    .filter(tipo => anomaliasTeste[tipo]);
 
 
   return {
@@ -1772,16 +2134,18 @@ function gerarDadosSimulados() {
 
     sensor_hall_ok: true,
 
-    sessao_teste: sessaoTesteAtual
+    sessao_teste: sessaoTesteAtual,
+
+    anomalias_ativas: anomaliasAtivas
 
   };
 
 }
 
 
-// ==============================================================================
-// ENVIO DE UMA AMOSTRA SIMULADA
-// ==============================================================================
+/* ============================================================================
+   22. ENVIO DE DADOS SIMULADOS PARA O FIREBASE
+============================================================================ */
 
 async function enviarDadosSimulados() {
 
@@ -1795,31 +2159,38 @@ async function enviarDadosSimulados() {
 
     const dados = gerarDadosSimulados();
 
-    // Gera uma chave nova para cada leitura.
-    const novaReferencia = database.ref("leituras").push();
+    // Gera uma chave única para cada amostra.
+
+    const novaReferencia =
+      database.ref("leituras").push();
 
     await novaReferencia.set(dados);
 
-    const hora = new Date().toLocaleTimeString("pt-BR");
-
-    const feedback = document.getElementById("test-feedback");
+    const feedback =
+      document.getElementById("test-feedback");
 
     if (feedback) {
 
       feedback.textContent =
-        `Amostra ${contadorTeste} enviada às ${hora}`;
+        `Amostra ${contadorTeste} enviada às ${
+          new Date().toLocaleTimeString("pt-BR")
+        }`;
 
     }
 
-    console.log("SIMULAÇÃO ENVIADA:", dados);
+    console.log("[SIMULAÇÃO] Dados enviados:", dados);
 
-    console.log("ID FIREBASE:", novaReferencia.key);
+    console.log("[SIMULAÇÃO] ID:", novaReferencia.key);
 
   } catch (erro) {
 
-    console.error("Falha ao enviar simulação:", erro);
+    console.error(
+      "[SIMULAÇÃO] Erro ao enviar dados:",
+      erro
+    );
 
-    const feedback = document.getElementById("test-feedback");
+    const feedback =
+      document.getElementById("test-feedback");
 
     if (feedback) {
 
@@ -1837,20 +2208,13 @@ async function enviarDadosSimulados() {
 }
 
 
-// ==============================================================================
-// INICIAR E PARAR SIMULAÇÃO
-// ==============================================================================
+/* ============================================================================
+   23. INICIAR SIMULAÇÃO
+============================================================================ */
 
 function iniciarSimulacao() {
 
   if (simulacaoAtiva) return;
-
-  if (!firebase.apps.length) {
-
-    alert("Firebase não foi inicializado.");
-
-    return;
-  }
 
   simulacaoAtiva = true;
 
@@ -1860,6 +2224,8 @@ function iniciarSimulacao() {
 
   referenciaOperacional = null;
 
+  identificadorReferencia = null;
+
   sessaoTesteAtual =
     "teste_" +
     Date.now().toString(36) +
@@ -1867,9 +2233,10 @@ function iniciarSimulacao() {
     Math.random().toString(36).slice(2, 8);
 
 
-  // Inicia todas as anomalias desligadas.
   Object.keys(anomaliasTeste).forEach(tipo => {
+
     anomaliasTeste[tipo] = false;
+
   });
 
 
@@ -1877,27 +2244,39 @@ function iniciarSimulacao() {
 
   atualizarEstadoReferencia(false, 0);
 
-  const feedback = document.getElementById("test-feedback");
+  const feedback =
+    document.getElementById("test-feedback");
 
-  feedback.textContent =
-    "Simulação iniciada. Coletando dados normais...";
+  if (feedback) {
+
+    feedback.textContent =
+      "Simulação iniciada. Coletando dez amostras normais.";
+
+  }
 
 
-  // Primeira leitura imediata.
-  enviarDadosSimulados();
-
-
-  // Próximas leituras a cada cinco segundos.
-  simulacaoTimer = setInterval(
-    enviarDadosSimulados,
-    INTERVALO_TESTE_MS
+  console.log(
+    "[SIMULAÇÃO] Nova sessão:",
+    sessaoTesteAtual
   );
 
 
-  console.log("SESSÃO DE TESTE:", sessaoTesteAtual);
+  // Primeira amostra imediatamente.
+  enviarDadosSimulados();
+
+
+  // Demais amostras a cada cinco segundos.
+  simulacaoTimer = setInterval(
+    enviarDadosSimulados,
+    CONFIG.intervaloSimulacao
+  );
 
 }
 
+
+/* ============================================================================
+   24. PARAR SIMULAÇÃO
+============================================================================ */
 
 function pararSimulacao() {
 
@@ -1915,19 +2294,25 @@ function pararSimulacao() {
 
 
   Object.keys(anomaliasTeste).forEach(tipo => {
+
     anomaliasTeste[tipo] = false;
+
   });
 
 
   atualizarInterfaceTeste();
 
-  const feedback = document.getElementById("test-feedback");
+  const feedback =
+    document.getElementById("test-feedback");
 
-  feedback.textContent =
-    "Simulação interrompida. Os registros enviados continuam armazenados no Firebase.";
+  if (feedback) {
 
+    feedback.textContent =
+      "Simulação interrompida. As leituras já enviadas permanecem no Firebase.";
 
-  console.log("SIMULAÇÃO INTERROMPIDA.");
+  }
+
+  console.log("[SIMULAÇÃO] Interrompida.");
 
 }
 
@@ -1947,9 +2332,9 @@ function alternarSimulacao() {
 }
 
 
-// ==============================================================================
-// ATIVAR E DESATIVAR ANOMALIAS
-// ==============================================================================
+/* ============================================================================
+   25. CONTROLE DAS ANOMALIAS
+============================================================================ */
 
 function alternarAnomalia(tipo) {
 
@@ -1957,10 +2342,15 @@ function alternarAnomalia(tipo) {
 
   if (referenciaOperacional === null) {
 
-    const feedback = document.getElementById("test-feedback");
+    const feedback =
+      document.getElementById("test-feedback");
 
-    feedback.textContent =
-      "Aguarde a coleta das 10 amostras normais.";
+    if (feedback) {
+
+      feedback.textContent =
+        "Aguarde a coleta das dez amostras normais.";
+
+    }
 
     return;
 
@@ -1970,15 +2360,17 @@ function alternarAnomalia(tipo) {
     return;
   }
 
-  anomaliasTeste[tipo] = !anomaliasTeste[tipo];
+  anomaliasTeste[tipo] =
+    !anomaliasTeste[tipo];
+
 
   atualizarInterfaceTeste();
 
-  const nome = {
+  const nomes = {
 
-    temperatura: "Temperatura",
+    temperatura: "Temperatura DS18B20",
 
-    rpm: "Rotação RPM",
+    rpm: "Rotação Hall",
 
     corrente: "Corrente ACS712",
 
@@ -1986,76 +2378,106 @@ function alternarAnomalia(tipo) {
 
   };
 
-  const feedback = document.getElementById("test-feedback");
+  const feedback =
+    document.getElementById("test-feedback");
 
-  feedback.textContent =
-    `${nome[tipo]}: ${
-      anomaliasTeste[tipo] ? "ANOMALIA ATIVADA" : "CONDIÇÃO NORMAL RESTAURADA"
-    }. A próxima leitura será enviada em até 5 segundos.`;
+  if (feedback) {
 
+    feedback.textContent =
+      `${nomes[tipo]}: ${
+        anomaliasTeste[tipo]
+          ? "anomalia ativada"
+          : "condição normal restaurada"
+      }.`;
+
+  }
 
   console.log(
-    "ANOMALIAS ATIVAS:",
+    "[TESTE] Anomalias ativas:",
     { ...anomaliasTeste }
   );
 
 }
 
 
-// ==============================================================================
-// RESTAURAR TODOS OS SENSORES
-// ==============================================================================
-
 function restaurarOperacaoNormal() {
 
   if (!simulacaoAtiva) return;
 
   Object.keys(anomaliasTeste).forEach(tipo => {
+
     anomaliasTeste[tipo] = false;
+
   });
 
   atualizarInterfaceTeste();
 
-  const feedback = document.getElementById("test-feedback");
+  const feedback =
+    document.getElementById("test-feedback");
 
-  feedback.textContent =
-    "Todas as anomalias foram desativadas. Retornando aos valores normais.";
+  if (feedback) {
 
-  console.log("TODAS AS ANOMALIAS RESTAURADAS.");
+    feedback.textContent =
+      "Todas as anomalias foram desativadas. Operação normal restaurada.";
+
+  }
+
+  console.log("[TESTE] Operação normal restaurada.");
 
 }
 
 
-// ==============================================================================
-// EVENTOS DOS BOTOES
-// ==============================================================================
+/* ============================================================================
+   26. EVENTOS DOS BOTÕES
+============================================================================ */
 
-document
-  .getElementById("test-toggle-button")
-  .addEventListener("click", alternarSimulacao);
+function inicializarControlesTeste() {
 
+  const botaoIniciar =
+    document.getElementById("test-toggle-button");
 
-document
-  .getElementById("test-reset-button")
-  .addEventListener("click", restaurarOperacaoNormal);
+  const botaoReset =
+    document.getElementById("test-reset-button");
 
+  if (botaoIniciar) {
 
-document
-  .querySelectorAll(".test-anomaly-button")
-  .forEach(botao => {
+    botaoIniciar.addEventListener(
+      "click",
+      alternarSimulacao
+    );
 
-    botao.addEventListener("click", () => {
+  }
 
-      alternarAnomalia(botao.dataset.anomalia);
+  if (botaoReset) {
+
+    botaoReset.addEventListener(
+      "click",
+      restaurarOperacaoNormal
+    );
+
+  }
+
+  document
+    .querySelectorAll(".test-anomaly-button")
+    .forEach(botao => {
+
+      botao.addEventListener("click", () => {
+
+        alternarAnomalia(botao.dataset.anomalia);
+
+      });
 
     });
 
-  });
+
+  atualizarInterfaceTeste();
+
+}
 
 
-// ==============================================================================
-// ATALHO DE TECLADO: ESPAÇO
-// ==============================================================================
+/* ============================================================================
+   27. ATALHO ESPAÇO
+============================================================================ */
 
 document.addEventListener("keydown", event => {
 
@@ -2063,16 +2485,22 @@ document.addEventListener("keydown", event => {
 
   if (event.repeat) return;
 
+  if (
+    event.ctrlKey ||
+    event.altKey ||
+    event.metaKey
+  ) {
+    return;
+  }
+
   const elemento = event.target;
 
-  // Não intercepta a barra de espaço quando o usuário está
-  // escrevendo ou acionando outro botão do site.
-
-  const tag = elemento.tagName?.toLowerCase();
-
+  // Não interfere nos botões, campos de texto e seletores.
   if (
-    ["input", "textarea", "select", "button"].includes(tag) ||
-    elemento.isContentEditable
+    elemento.closest &&
+    elemento.closest(
+      "button, input, textarea, select, [contenteditable='true']"
+    )
   ) {
     return;
   }
@@ -2084,94 +2512,34 @@ document.addEventListener("keydown", event => {
 });
 
 
-// Estado inicial dos controles.
-atualizarInterfaceTeste();
+/* ============================================================================
+   28. INICIALIZAÇÃO GERAL
+============================================================================ */
+
+function iniciarMoniMotor() {
+
+  console.log("================================");
+
+  console.log("MONIMOTOR INICIANDO");
+
+  console.log("================================");
 
 
-function renderizarHistorico(leituras) {
+  inicializarGrafico();
 
-  const corpo = document.getElementById("history-body");
-  const contador = document.getElementById("history-count");
+  monitorarStatusConexao();
 
-  if (!corpo || !contador) {
-    console.error("Elementos do histórico não encontrados.");
-    return;
-  }
+  escutarLeiturasEmTempoReal();
 
-  corpo.replaceChildren();
+  inicializarControlesTeste();
 
-  if (leituras.length === 0) {
 
-    const linha = document.createElement("tr");
-    const celula = document.createElement("td");
-
-    celula.colSpan = 6;
-    celula.className = "history-empty";
-    celula.textContent = "Nenhuma leitura recebida.";
-
-    linha.appendChild(celula);
-    corpo.appendChild(linha);
-
-    contador.textContent = "0 amostras";
-    renderizarHistorico([]);
-
-    return;
-  }
-
-  // Mais recente primeiro.
-  const recentes = [...leituras]
-    .reverse()
-    .slice(0, 10);
-
-  recentes.forEach(dado => {
-
-    const linha = document.createElement("tr");
-
-    const valores = [
-
-      formatarHora(dado.timestamp),
-
-      obterTemperatura(dado) !== null
-        ? obterTemperatura(dado).toFixed(2) + " °C"
-        : "--",
-
-      obterRPM(dado) !== null
-        ? obterRPM(dado).toLocaleString("pt-BR")
-        : "--",
-
-      obterCorrente(dado) !== null
-        ? obterCorrente(dado).toFixed(3) + " A"
-        : "--",
-
-      obterVibracao(dado) !== null
-        ? obterVibracao(dado).toFixed(3) + " m/s²"
-        : "--",
-
-      dado.modo === "simulacao"
-        ? "SIMULAÇÃO"
-        : "REAL"
-
-    ];
-
-    valores.forEach((valor, indice) => {
-
-      const celula = document.createElement("td");
-
-      celula.textContent = valor;
-
-      if (indice === 5) {
-        celula.className = "history-origin";
-      }
-
-      linha.appendChild(celula);
-
-    });
-
-    corpo.appendChild(linha);
-
-  });
-
-  contador.textContent =
-    `${leituras.length} amostras recebidas`;
+  console.log("[MONIMOTOR] Dashboard inicializado.");
 
 }
+
+
+// O app.js está carregado no final do HTML.
+// Portanto, os elementos da página já existem.
+
+iniciarMoniMotor();
