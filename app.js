@@ -84,6 +84,7 @@ let referenciaOperacional = null;
 
 let grafico = null;
 
+let sessaoTesteAtual = null;
 
 // ==============================================================================
 // FUNCOES DE CONVERSAO E VALIDACAO
@@ -670,29 +671,47 @@ function identificarEstadoMotor(dado) {
 // REFERENCIA OPERACIONAL
 // ==============================================================================
 
+
 function capturarReferencia(leituras) {
 
   if (referenciaOperacional !== null) {
+    atualizarEstadoReferencia(true, CONFIG.amostrasReferencia);
     return referenciaOperacional;
   }
 
-  // Não usar simulação como referência para sensores reais.
+  if (leituras.length === 0) return null;
 
-  const amostrasValidas = leituras.filter(dado => {
+  const modoAtual = leituras[leituras.length - 1].modo;
+
+  let amostrasValidas = leituras.filter(dado => {
 
     return (
-      dado.modo !== "simulacao" &&
+      dado.modo === modoAtual &&
       leituraCompleta(dado) &&
       identificarEstadoMotor(dado) === "operando"
     );
 
   });
 
+  // Nos testes, só usamos amostras da sessão atual.
+  if (modoAtual === "simulacao" && sessaoTesteAtual) {
+
+    amostrasValidas = amostrasValidas.filter(
+      dado => dado.sessao_teste === sessaoTesteAtual
+    );
+
+  }
+
   if (amostrasValidas.length < CONFIG.amostrasReferencia) {
+
+    atualizarEstadoReferencia(
+      false,
+      amostrasValidas.length
+    );
+
     return null;
   }
 
-  // As primeiras dez leituras válidas serão a referência.
   const base = amostrasValidas.slice(
     0,
     CONFIG.amostrasReferencia
@@ -714,6 +733,8 @@ function capturarReferencia(leituras) {
     "REFERÊNCIA OPERACIONAL:",
     referenciaOperacional
   );
+
+  atualizarEstadoReferencia(true, CONFIG.amostrasReferencia);
 
   return referenciaOperacional;
 
@@ -1416,3 +1437,559 @@ escutarLeiturasEmTempoReal();
 
 console.log("MoniMotor iniciado.");
 
+// ==============================================================================
+// MONIMOTOR: AMBIENTE DE TESTES
+// ==============================================================================
+
+const INTERVALO_TESTE_MS = 5000;
+
+// Estado do simulador.
+
+let simulacaoAtiva = false;
+let simulacaoTimer = null;
+let inicioSimulacao = 0;
+let contadorTeste = 0;
+let enviandoSimulacao = false;
+
+// Anomalias independentes.
+
+const anomaliasTeste = {
+
+  temperatura: false,
+
+  rpm: false,
+
+  corrente: false,
+
+  vibracao: false
+
+};
+
+
+// ==============================================================================
+// GERENCIAMENTO DA INTERFACE DE TESTES
+// ==============================================================================
+
+function atualizarInterfaceTeste() {
+
+  const badge = document.getElementById("test-mode-status");
+
+  const botao = document.getElementById("test-toggle-button");
+
+  const reset = document.getElementById("test-reset-button");
+
+  if (!badge || !botao || !reset) return;
+
+  badge.textContent = simulacaoAtiva
+    ? "Simulação ativa"
+    : "Simulação inativa";
+
+  badge.className = simulacaoAtiva
+    ? "badge online"
+    : "badge health-unknown";
+
+  botao.textContent = simulacaoAtiva
+    ? "Interromper simulação (ESPAÇO)"
+    : "Iniciar simulação (ESPAÇO)";
+
+  botao.classList.toggle("running", simulacaoAtiva);
+
+  const referenciaPronta = referenciaOperacional !== null;
+
+  document.querySelectorAll(".test-anomaly-button").forEach(botaoAnomalia => {
+
+    const tipo = botaoAnomalia.dataset.anomalia;
+
+    const ativa = Boolean(anomaliasTeste[tipo]);
+
+    botaoAnomalia.disabled =
+      !simulacaoAtiva || !referenciaPronta;
+
+    botaoAnomalia.classList.toggle("active", ativa);
+
+    botaoAnomalia.setAttribute(
+      "aria-pressed",
+      String(ativa)
+    );
+
+    const titulos = {
+      temperatura: "Temperatura elevada",
+      rpm: "Queda de rotação",
+      corrente: "Sobrecorrente",
+      vibracao: "Vibração elevada"
+    };
+
+    botaoAnomalia.querySelector("strong").textContent =
+      ativa
+        ? titulos[tipo] + " [ATIVA]"
+        : titulos[tipo];
+
+  });
+
+  reset.disabled = !simulacaoAtiva;
+
+}
+
+
+function atualizarEstadoReferencia(pronta, quantidade) {
+
+  const elemento = document.getElementById(
+    "test-reference-status"
+  );
+
+  if (!elemento) return;
+
+  if (pronta) {
+
+    elemento.textContent =
+      "Referência estabelecida com 10 amostras normais. Os testes de anomalia estão liberados.";
+
+  } else {
+
+    elemento.textContent =
+      `Coletando referência: ${quantidade} de ${CONFIG.amostrasReferencia} amostras normais.`;
+
+  }
+
+  atualizarInterfaceTeste();
+
+}
+
+
+// ==============================================================================
+// GERACAO DE DADOS SIMULADOS
+// ==============================================================================
+
+function gerarDadosSimulados() {
+
+  const tempo = (Date.now() - inicioSimulacao) / 1000;
+
+  // --------------------------------------------------------------------------
+  // CENARIO NORMAL
+  // Motor de indução de quatro polos, 60 Hz.
+  // --------------------------------------------------------------------------
+
+  let temperatura =
+    45.0 +
+    0.25 * Math.sin(tempo * 0.15) +
+    0.10 * Math.sin(tempo * 0.33);
+
+  let rpm =
+    1750 +
+    6 * Math.sin(tempo * 0.20) +
+    2 * Math.sin(tempo * 0.70);
+
+  let corrente =
+    10.0 +
+    0.12 * Math.sin(tempo * 0.15) +
+    0.05 * Math.sin(tempo * 0.61);
+
+  let vibracaoRMS =
+    0.95 +
+    0.04 * Math.sin(tempo * 0.90) +
+    0.02 * Math.sin(tempo * 0.31);
+
+
+  // --------------------------------------------------------------------------
+  // ANOMALIA: TEMPERATURA
+  // --------------------------------------------------------------------------
+
+  if (anomaliasTeste.temperatura) {
+
+    temperatura =
+      53.0 + 0.20 * Math.sin(tempo * 0.10);
+
+  }
+
+
+  // --------------------------------------------------------------------------
+  // ANOMALIA: RPM
+  // --------------------------------------------------------------------------
+
+  if (anomaliasTeste.rpm) {
+
+    rpm =
+      1450 + 4 * Math.sin(tempo * 0.25);
+
+  }
+
+
+  // --------------------------------------------------------------------------
+  // ANOMALIA: CORRENTE
+  // --------------------------------------------------------------------------
+
+  if (anomaliasTeste.corrente) {
+
+    corrente =
+      13.2 + 0.10 * Math.sin(tempo * 0.50);
+
+  }
+
+
+  // --------------------------------------------------------------------------
+  // ANOMALIA: VIBRACAO
+  // --------------------------------------------------------------------------
+
+  if (anomaliasTeste.vibracao) {
+
+    vibracaoRMS =
+      1.75 + 0.04 * Math.sin(tempo * 0.70);
+
+  }
+
+
+  // Pico ilustrativo, sempre acima do RMS.
+  const vibracaoPico =
+    vibracaoRMS * 1.65 +
+    0.04 * Math.abs(Math.sin(tempo * 1.10));
+
+
+  // Um ímã = um pulso por volta.
+  // Contagem correspondente ao intervalo de cinco segundos.
+  const pulsosHall = Math.round(
+    rpm * (INTERVALO_TESTE_MS / 60000)
+  );
+
+
+  return {
+
+    temperatura: Number(temperatura.toFixed(2)),
+
+    rpm: Math.round(rpm),
+
+    corrente: Number(corrente.toFixed(3)),
+
+    vibracao_rms_z: Number(vibracaoRMS.toFixed(3)),
+
+    vibracao_pico_z: Number(vibracaoPico.toFixed(3)),
+
+    pulsos_hall: pulsosHall,
+
+    timestamp: firebase.database.ServerValue.TIMESTAMP,
+
+    modo: "simulacao",
+
+    corrente_tipo: "AC_RMS",
+
+    sensor_ds18b20_ok: true,
+
+    sensor_mpu6050_ok: true,
+
+    sensor_acs712_ok: true,
+
+    sensor_hall_ok: true,
+
+    sessao_teste: sessaoTesteAtual
+
+  };
+
+}
+
+
+// ==============================================================================
+// ENVIO DE UMA AMOSTRA SIMULADA
+// ==============================================================================
+
+async function enviarDadosSimulados() {
+
+  if (!simulacaoAtiva || enviandoSimulacao) return;
+
+  enviandoSimulacao = true;
+
+  try {
+
+    contadorTeste++;
+
+    const dados = gerarDadosSimulados();
+
+    // Gera uma chave nova para cada leitura.
+    const novaReferencia = database.ref("leituras").push();
+
+    await novaReferencia.set(dados);
+
+    const hora = new Date().toLocaleTimeString("pt-BR");
+
+    const feedback = document.getElementById("test-feedback");
+
+    if (feedback) {
+
+      feedback.textContent =
+        `Amostra ${contadorTeste} enviada às ${hora}`;
+
+    }
+
+    console.log("SIMULAÇÃO ENVIADA:", dados);
+
+    console.log("ID FIREBASE:", novaReferencia.key);
+
+  } catch (erro) {
+
+    console.error("Falha ao enviar simulação:", erro);
+
+    const feedback = document.getElementById("test-feedback");
+
+    if (feedback) {
+
+      feedback.textContent =
+        "Erro Firebase: " + erro.message;
+
+    }
+
+  } finally {
+
+    enviandoSimulacao = false;
+
+  }
+
+}
+
+
+// ==============================================================================
+// INICIAR E PARAR SIMULAÇÃO
+// ==============================================================================
+
+function iniciarSimulacao() {
+
+  if (simulacaoAtiva) return;
+
+  if (!firebase.apps.length) {
+
+    alert("Firebase não foi inicializado.");
+
+    return;
+  }
+
+  simulacaoAtiva = true;
+
+  inicioSimulacao = Date.now();
+
+  contadorTeste = 0;
+
+  referenciaOperacional = null;
+
+  sessaoTesteAtual =
+    "teste_" +
+    Date.now().toString(36) +
+    "_" +
+    Math.random().toString(36).slice(2, 8);
+
+
+  // Inicia todas as anomalias desligadas.
+  Object.keys(anomaliasTeste).forEach(tipo => {
+    anomaliasTeste[tipo] = false;
+  });
+
+
+  atualizarInterfaceTeste();
+
+  atualizarEstadoReferencia(false, 0);
+
+  const feedback = document.getElementById("test-feedback");
+
+  feedback.textContent =
+    "Simulação iniciada. Coletando dados normais...";
+
+
+  // Primeira leitura imediata.
+  enviarDadosSimulados();
+
+
+  // Próximas leituras a cada cinco segundos.
+  simulacaoTimer = setInterval(
+    enviarDadosSimulados,
+    INTERVALO_TESTE_MS
+  );
+
+
+  console.log("SESSÃO DE TESTE:", sessaoTesteAtual);
+
+}
+
+
+function pararSimulacao() {
+
+  if (!simulacaoAtiva) return;
+
+  simulacaoAtiva = false;
+
+  if (simulacaoTimer !== null) {
+
+    clearInterval(simulacaoTimer);
+
+    simulacaoTimer = null;
+
+  }
+
+
+  Object.keys(anomaliasTeste).forEach(tipo => {
+    anomaliasTeste[tipo] = false;
+  });
+
+
+  atualizarInterfaceTeste();
+
+  const feedback = document.getElementById("test-feedback");
+
+  feedback.textContent =
+    "Simulação interrompida. Os registros enviados continuam armazenados no Firebase.";
+
+
+  console.log("SIMULAÇÃO INTERROMPIDA.");
+
+}
+
+
+function alternarSimulacao() {
+
+  if (simulacaoAtiva) {
+
+    pararSimulacao();
+
+  } else {
+
+    iniciarSimulacao();
+
+  }
+
+}
+
+
+// ==============================================================================
+// ATIVAR E DESATIVAR ANOMALIAS
+// ==============================================================================
+
+function alternarAnomalia(tipo) {
+
+  if (!simulacaoAtiva) return;
+
+  if (referenciaOperacional === null) {
+
+    const feedback = document.getElementById("test-feedback");
+
+    feedback.textContent =
+      "Aguarde a coleta das 10 amostras normais.";
+
+    return;
+
+  }
+
+  if (!Object.prototype.hasOwnProperty.call(anomaliasTeste, tipo)) {
+    return;
+  }
+
+  anomaliasTeste[tipo] = !anomaliasTeste[tipo];
+
+  atualizarInterfaceTeste();
+
+  const nome = {
+
+    temperatura: "Temperatura",
+
+    rpm: "Rotação RPM",
+
+    corrente: "Corrente ACS712",
+
+    vibracao: "Aceleração MPU6050"
+
+  };
+
+  const feedback = document.getElementById("test-feedback");
+
+  feedback.textContent =
+    `${nome[tipo]}: ${
+      anomaliasTeste[tipo] ? "ANOMALIA ATIVADA" : "CONDIÇÃO NORMAL RESTAURADA"
+    }. A próxima leitura será enviada em até 5 segundos.`;
+
+
+  console.log(
+    "ANOMALIAS ATIVAS:",
+    { ...anomaliasTeste }
+  );
+
+}
+
+
+// ==============================================================================
+// RESTAURAR TODOS OS SENSORES
+// ==============================================================================
+
+function restaurarOperacaoNormal() {
+
+  if (!simulacaoAtiva) return;
+
+  Object.keys(anomaliasTeste).forEach(tipo => {
+    anomaliasTeste[tipo] = false;
+  });
+
+  atualizarInterfaceTeste();
+
+  const feedback = document.getElementById("test-feedback");
+
+  feedback.textContent =
+    "Todas as anomalias foram desativadas. Retornando aos valores normais.";
+
+  console.log("TODAS AS ANOMALIAS RESTAURADAS.");
+
+}
+
+
+// ==============================================================================
+// EVENTOS DOS BOTOES
+// ==============================================================================
+
+document
+  .getElementById("test-toggle-button")
+  .addEventListener("click", alternarSimulacao);
+
+
+document
+  .getElementById("test-reset-button")
+  .addEventListener("click", restaurarOperacaoNormal);
+
+
+document
+  .querySelectorAll(".test-anomaly-button")
+  .forEach(botao => {
+
+    botao.addEventListener("click", () => {
+
+      alternarAnomalia(botao.dataset.anomalia);
+
+    });
+
+  });
+
+
+// ==============================================================================
+// ATALHO DE TECLADO: ESPAÇO
+// ==============================================================================
+
+document.addEventListener("keydown", event => {
+
+  if (event.code !== "Space") return;
+
+  if (event.repeat) return;
+
+  const elemento = event.target;
+
+  // Não intercepta a barra de espaço quando o usuário está
+  // escrevendo ou acionando outro botão do site.
+
+  const tag = elemento.tagName?.toLowerCase();
+
+  if (
+    ["input", "textarea", "select", "button"].includes(tag) ||
+    elemento.isContentEditable
+  ) {
+    return;
+  }
+
+  event.preventDefault();
+
+  alternarSimulacao();
+
+});
+
+
+// Estado inicial dos controles.
+atualizarInterfaceTeste();
