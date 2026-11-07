@@ -319,15 +319,54 @@ function persistenciaConfirmada(leituras, seletor, condicao) {
 // LEITURAS DO FIREBASE
 // ==============================================================================
 
+
 function obterLeituras(snapshot) {
 
   const dados = snapshot.val();
 
-  if (!dados) return [];
+  if (!dados || typeof dados !== "object") {
+    return [];
+  }
 
-  // Compatibilidade com o antigo formato de leitura unica.
+  const registros = [];
 
-  if (registroValido(dados)) {
+  // PRIMEIRO: procura as leituras individuais criadas por PUSH.
+  snapshot.forEach(childSnapshot => {
+
+    const item = childSnapshot.val();
+
+    if (ehRegistro(item)) {
+
+      registros.push({
+        ...item,
+        _key: childSnapshot.key
+      });
+
+    }
+
+  });
+
+  // Se encontrou registros individuais, utiliza-os.
+  if (registros.length > 0) {
+
+    registros.sort((a, b) => {
+
+      const tempoA = converterTimestamp(a.timestamp);
+      const tempoB = converterTimestamp(b.timestamp);
+
+      if (tempoA !== null && tempoB !== null) {
+        return tempoA - tempoB;
+      }
+
+      return String(a._key).localeCompare(String(b._key));
+
+    });
+
+    return registros.slice(-CONFIG.quantidadeAmostras);
+  }
+
+  // SEGUNDO: compatibilidade com o formato antigo.
+  if (ehRegistro(dados)) {
 
     return [{
       ...dados,
@@ -335,6 +374,10 @@ function obterLeituras(snapshot) {
     }];
 
   }
+
+  return [];
+}
+
 
   const registros = [];
 
@@ -1407,6 +1450,18 @@ function escutarLeiturasEmTempoReal() {
     );
 
     const leituras = obterLeituras(snapshot);
+
+    console.log("QUANTIDADE DE LEITURAS:", leituras.length);
+
+console.table(leituras.map(dado => ({
+  horario: formatarHora(dado.timestamp),
+  temperatura: obterTemperatura(dado),
+  rpm: obterRPM(dado),
+  corrente: obterCorrente(dado),
+  vibracao: obterVibracao(dado),
+  modo: dado.modo
+})));
+
 
     console.log("[FIREBASE] Leituras interpretadas:", leituras);
 
