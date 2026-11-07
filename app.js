@@ -11,13 +11,13 @@
 // ============================================================================
 
 const firebaseConfig = {
-  apiKey: "SUA_API_KEY_ORIGINAL",
+  apiKey: "AIzaSyDgv8TKtlN8cZaNhcrFtC9j1HM4gXUu06c",
   authDomain: "upx2---projeto.firebaseapp.com",
   databaseURL: "https://upx2---projeto-default-rtdb.firebaseio.com/",
   projectId: "upx2---projeto",
   storageBucket: "upx2---projeto.firebasestorage.app",
   messagingSenderId: "320149787397",
-  appId: "SEU_APP_ID_ORIGINAL",
+  appId: "1:320149787397:web:28b5b4fc62c85399079d6c",
   measurementId: "G-QYFFSXY1GT"
 };
 
@@ -422,7 +422,7 @@ function obterLeituras(snapshot) {
 
   return resultado.slice(-CONFIG.quantidadeAmostras);
 
-}
+
 
 
 // ============================================================================
