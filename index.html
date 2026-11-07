@@ -1,212 +1,90 @@
-
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
   <meta name="description" content="Dashboard de monitoramento de motores industriais.">
-
   <title>MoniMotor | Monitoramento Industrial</title>
 
-  <!-- Fontes -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-
   <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-
-  <!-- CSS -->
   <link rel="stylesheet" href="style.css">
 
-  <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 </head>
-
 <body>
-
-  <div class="dashboard-container">
-
-    <!-- CABECALHO -->
+  <main class="dashboard-container">
     <header class="header">
-
       <div class="header-title-box">
-        <h1>
-          MoniMotor
-          <span class="tag-system">PREDITIVO</span>
-        </h1>
-
-        <p class="subtitle">
-          Monitoramento de Motores Industriais em Tempo Real
-        </p>
+        <h1>MoniMotor <span class="tag-system">PREDITIVO</span></h1>
+        <p class="subtitle">Monitoramento de Motores Industriais em Tempo Real</p>
       </div>
 
       <div class="header-status-group">
-
-        <!-- Estado do motor -->
-        <div id="health-badge" class="badge health-unknown">
+        <div id="health-badge" class="badge health-unknown" aria-live="polite">
           <span class="status-indicator"></span>
           <span id="health-text">Aguardando telemetria...</span>
         </div>
-
-        <!-- Conexao Firebase -->
-        <div id="status-badge" class="badge offline">
+        <div id="status-badge" class="badge offline" aria-live="polite">
           <span class="status-indicator"></span>
           <span id="status-text">Conectando ao Firebase...</span>
         </div>
-
       </div>
     </header>
 
-
-<!-- HISTORICO DE LEITURAS -->
-<section class="history-section">
-
-  <div class="history-header">
-
-    <div>
-      <h2>Últimas Leituras Recebidas</h2>
-      <p>Registro cronológico das medições recebidas pelo Firebase.</p>
-    </div>
-
-    <span id="history-count">0 amostras</span>
-
-  </div>
-
-  <div class="history-table-wrapper">
-
-    <table class="history-table">
-
-      <thead>
-        <tr>
-          <th>Horário</th>
-          <th>Temperatura</th>
-          <th>RPM</th>
-          <th>Corrente</th>
-          <th>Aceleração Z</th>
-        </tr>
-      </thead>
-
-      <tbody id="history-body">
-
-        <tr>
-          <td colspan="6" class="history-empty">
-            Aguardando primeiras leituras...
-          </td>
-        </tr>
-
-      </tbody>
-
-    </table>
-
-  </div>
-
-</section>
-
-
-    <!-- INDICADORES -->
-    <section class="cards-grid">
-
-      <div class="card" id="card-temp">
-        <div class="card-header">
-          <span class="card-title">Temperatura</span>
-          <span class="card-unit">°C</span>
-        </div>
-
+    <section class="cards-grid" aria-label="Indicadores do motor">
+      <article class="card" id="card-temp">
+        <div class="card-header"><span class="card-title">Temperatura</span><span class="card-unit">°C</span></div>
         <div class="card-value" id="val-temp">--</div>
+        <div class="card-footer">Atualizado: <span id="time-temp">--:--:--</span></div>
+      </article>
 
-        <div class="card-footer">
-          Atualizado: <span id="time-temp">--:--:--</span>
-        </div>
-      </div>
-
-      <div class="card" id="card-rpm">
-        <div class="card-header">
-          <span class="card-title">Rotação</span>
-          <span class="card-unit">RPM</span>
-        </div>
-
+      <article class="card" id="card-rpm">
+        <div class="card-header"><span class="card-title">Rotação</span><span class="card-unit">RPM</span></div>
         <div class="card-value" id="val-rpm">--</div>
+        <div class="card-footer">Atualizado: <span id="time-rpm">--:--:--</span></div>
+      </article>
 
-        <div class="card-footer">
-          Atualizado: <span id="time-rpm">--:--:--</span>
-        </div>
-      </div>
-
-      <div class="card" id="card-corrente">
-        <div class="card-header">
-          <span class="card-title">Corrente</span>
-          <span class="card-unit">A</span>
-        </div>
-
+      <article class="card" id="card-corrente">
+        <div class="card-header"><span class="card-title">Corrente</span><span class="card-unit">A</span></div>
         <div class="card-value" id="val-corrente">--</div>
+        <div class="card-footer">Atualizado: <span id="time-corrente">--:--:--</span></div>
+      </article>
 
-        <div class="card-footer">
-          Atualizado: <span id="time-corrente">--:--:--</span>
-        </div>
-      </div>
-
-      <div class="card" id="card-acel">
-        <div class="card-header">
-          <span class="card-title">Aceleração RMS (Z)</span>
-          <span class="card-unit">m/s²</span>
-        </div>
-
+      <article class="card" id="card-acel">
+        <div class="card-header"><span class="card-title">Vibração (Acel. Z)</span><span class="card-unit">m/s²</span></div>
         <div class="card-value" id="val-acel">--</div>
+        <div class="card-footer">Atualizado: <span id="time-acel">--:--:--</span></div>
+      </article>
+    </section>
 
-        <div class="card-footer">
-          Atualizado: <span id="time-acel">--:--:--</span>
+    <section class="diagnostic-section">
+      <div class="diagnostic-header">
+        <h2>Centro de Análise Operacional</h2>
+        <span class="diagnostic-status-text" id="diagnostic-count">Aguardando medições</span>
+      </div>
+      <div class="diagnostic-grid" id="diagnostic-container" aria-live="polite">
+        <div class="diag-card ok">
+          <div class="diag-title">Inicializando sistema</div>
+          <div class="diag-desc">Aguardando conexão com o Realtime Database.</div>
         </div>
       </div>
-
     </section>
 
-    <!-- DIAGNOSTICO -->
-    <section class="diagnostic-section">
-
-      <div class="diagnostic-header">
-
-        <h2>Centro de Análise Operacional</h2>
-
-        <span class="diagnostic-status-text" id="diagnostic-count">
-          Aguardando medições
-        </span>
-
-      </div>
-
-      <div class="diagnostic-grid" id="diagnostic-container">
-        <!-- Diagnosticos inseridos pelo JavaScript -->
-      </div>
-
-    </section>
-
-
-    <!-- GRAFICO -->
     <section class="chart-section">
-
       <div class="chart-header">
-
         <h2>Histórico de Leituras</h2>
-
-        <span class="chart-info">
-          Últimas 20 amostras
-        </span>
-
+        <span class="chart-info" id="data-mode">Últimas 20 amostras</span>
       </div>
-
       <div class="chart-wrapper">
-        <canvas id="graficoLeituras"></canvas>
+        <canvas id="graficoLeituras" aria-label="Gráfico histórico dos sensores" role="img"></canvas>
       </div>
-
     </section>
+  </main>
 
-  </div>
-
-  <!-- FIREBASE SDK -->
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-
-  <!-- APLICACAO -->
   <script src="app.js"></script>
-
 </body>
 </html>
