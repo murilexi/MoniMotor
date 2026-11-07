@@ -2074,7 +2074,7 @@ document.addEventListener("keydown", event => {
     return;
   }
 
-  // Atalhos discretos para controle dos valores simulados.
+  // Atalhos discretos para controle dos valores sdos.
   if (!event.altKey || !event.shiftKey) return;
 
   const tecla = event.key.toLowerCase();
