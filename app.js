@@ -40,7 +40,7 @@ const CONFIG = {
   intervaloTimeout: 15000,
   intervaloSimulacao: 5000,
 
-  amostrasReferencia: 10,
+  amostrasReferencia: 5,
   amostrasPersistencia: 3,
 
   rpmMinimoOperacao: 30,
@@ -90,6 +90,7 @@ let contadorDemonstracao = 0;
 
 let enviandoDemonstracao = false;
 let inicioDemonstracao = 0;
+let anomaliaPendentePorClique = null;
 
 const anomalias = {
   temperatura: false,
@@ -329,41 +330,24 @@ function obterLeituras(snapshot) {
 
   const dados = snapshot.val();
 
-  if (!dados || typeof dados !== "object") {
-    return [];
-  }
+  if (!dados || typeof dados !== "object") return [];
 
   const registros = [];
 
   function percorrer(no, caminho) {
 
-    if (
-      !no ||
-      typeof no !== "object" ||
-      Array.isArray(no)
-    ) {
-      return;
-    }
+    if (!no || typeof no !== "object" || Array.isArray(no)) return;
 
     const filhos = Object.entries(no).filter(
-      ([, valor]) =>
-        valor !== null &&
-        typeof valor === "object" &&
-        !Array.isArray(valor)
+      ([, valor]) => valor !== null && typeof valor === "object" && !Array.isArray(valor)
     );
 
     if (ehRegistro(no)) {
-      registros.push({
-        ...no,
-        _key: caminho || "__registro_raiz__"
-      });
+      registros.push({ ...no, _key: caminho || "__registro_raiz__" });
     }
 
     filhos.forEach(([chave, valor]) => {
-      const novoCaminho = caminho
-        ? `${caminho}/${chave}`
-        : chave;
-
+      const novoCaminho = caminho ? `${caminho}/${chave}` : chave;
       percorrer(valor, novoCaminho);
     });
 
@@ -372,27 +356,21 @@ function obterLeituras(snapshot) {
   percorrer(dados, "");
 
   const unicos = new Map();
-
-  registros.forEach(registro => {
-    unicos.set(registro._key, registro);
-  });
+  registros.forEach(registro => unicos.set(registro._key, registro));
 
   const resultado = [...unicos.values()];
-
   resultado.sort((a, b) => {
     const tempoA = converterTimestamp(a.timestamp);
     const tempoB = converterTimestamp(b.timestamp);
 
-    if (tempoA !== null && tempoB !== null) {
-      return tempoA - tempoB;
-    }
-
+    if (tempoA !== null && tempoB !== null) return tempoA - tempoB;
     return String(a._key).localeCompare(String(b._key));
   });
 
   return resultado.slice(-CONFIG.quantidadeAmostras);
 
 }
+
 
 // ============================================================================
 // 6. STATUS DA CONEXAO
@@ -944,84 +922,6 @@ function capturarReferencia(leituras) {
 }
 
 
-// Detecta também um valor isolado alterado diretamente no Realtime Database.
-// O alerta pontual é imediato; a confirmação de persistência continua exigindo
-// CONFIG.amostrasPersistencia leituras consecutivas.
-function detectarDesviosPontuais(leituras, referencia) {
-
-  const limites = {
-    temperatura: referencia.temperatura + CONFIG.aumentoTemperatura,
-    corrente: Math.max(
-      referencia.corrente * (1 + CONFIG.aumentoCorrentePercentual),
-      referencia.corrente + CONFIG.aumentoCorrenteAbsoluto
-    ),
-    rpm: referencia.rpm * (1 - CONFIG.quedaRPMPercentual),
-    vibracao: Math.max(
-      referencia.vibracao * (1 + CONFIG.aumentoVibracaoPercentual),
-      referencia.vibracao + CONFIG.aumentoVibracaoAbsoluto
-    )
-  };
-
-  const eventos = new Map();
-
-  leituras.forEach(dado => {
-    const verificacoes = [
-      {
-        campo: "temperatura",
-        sensor: "DS18B20",
-        valor: obterTemperatura(dado),
-        limite: limites.temperatura,
-        fora: valor => valor >= limites.temperatura,
-        titulo: "TEMPERATURA FORA DA FAIXA",
-        acao: "Confirmar a medição e verificar ventilação, carga térmica, fixação do sensor e limite do fabricante."
-      },
-      {
-        campo: "corrente",
-        sensor: "ACS712",
-        valor: obterCorrente(dado),
-        limite: limites.corrente,
-        fora: valor => valor >= limites.corrente,
-        titulo: "CORRENTE FORA DA FAIXA",
-        acao: "Comparar com a corrente nominal e conferir a medição com instrumento independente; investigar carga e alimentação."
-      },
-      {
-        campo: "rpm",
-        sensor: "Sensor Hall",
-        valor: obterRPM(dado),
-        limite: limites.rpm,
-        fora: valor => valor <= limites.rpm,
-        titulo: "ROTAÇÃO ABAIXO DA REFERÊNCIA",
-        acao: "Conferir carga mecânica, acionamento, posição do ímã e contagem de pulsos."
-      },
-      {
-        campo: "vibracao",
-        sensor: "MPU6050",
-        valor: obterVibracao(dado),
-        limite: limites.vibracao,
-        fora: valor => valor >= limites.vibracao,
-        titulo: "VIBRAÇÃO FORA DA FAIXA",
-        acao: "Verificar fixação do sensor, base, acoplamento e rolamentos; confirmar com instrumento apropriado."
-      }
-    ];
-
-    verificacoes.forEach(item => {
-      if (item.valor !== null && item.fora(item.valor)) {
-        // Como as leituras já estão ordenadas por timestamp, o último evento
-        // encontrado para cada sensor é o mais recente dentro da janela consultada.
-        eventos.set(item.campo, {
-          ...item,
-          timestamp: dado.timestamp,
-          chave: dado._key || null
-        });
-      }
-    });
-  });
-
-  return [...eventos.values()];
-
-}
-
-
 // ============================================================================
 // 13. ANALISE DE MANUTENCAO
 // ============================================================================
@@ -1205,33 +1105,6 @@ function analisarSaudeDoMotor(leituras) {
 
     }
   );
-
-
-  // ALERTAS PONTUAIS: uma edição manual ou um pico isolado em qualquer
-  // registro dentro das últimas 20 amostras já aparece no relatório.
-  // Se o desvio também for persistente, a análise detalhada abaixo assume.
-  const persistenciaPorCampo = {
-    temperatura: temperaturaAlta,
-    corrente: correnteAlta,
-    rpm: rpmBaixo,
-    vibracao: vibracaoAlta
-  };
-
-  detectarDesviosPontuais(leituras, referencia).forEach(evento => {
-
-    if (persistenciaPorCampo[evento.campo]) return;
-
-    const horarioEvento = formatarHora(evento.timestamp);
-
-    adicionar(
-      "warning",
-      `ALERTA PONTUAL: ${evento.titulo}`,
-      evento.sensor,
-      `Foi identificada uma leitura isolada de ${evento.valor.toFixed(2)}. Limite de referência configurado: ${evento.limite.toFixed(2)}. Registro: ${horarioEvento}.`,
-      evento.acao
-    );
-
-  });
 
 
   // CORRENTE + RPM
@@ -1579,6 +1452,18 @@ function processarLeituras(leituras) {
 
 
   const resultado = analisarSaudeDoMotor(leituras);
+
+  // Se o usuário clicou antes da linha de base ficar pronta, ativa a anomalia
+  // assim que houver amostras normais suficientes para a comparação.
+  if (
+    demonstracaoAtiva &&
+    referenciaOperacional !== null &&
+    anomaliaPendentePorClique !== null
+  ) {
+    const tipoPendente = anomaliaPendentePorClique;
+    anomaliaPendentePorClique = null;
+    alternarAnomalia(tipoPendente);
+  }
 
   const estado = identificarEstadoMotor(atual);
 
@@ -1950,6 +1835,27 @@ async function enviarDadosDemonstracao() {
 // 20. INICIAR DEMONSTRAÇÃO
 // ============================================================================
 
+
+function agendarProximaAmostraDemonstracao() {
+
+  if (!demonstracaoAtiva || intervaloDemonstracao !== null) return;
+
+  intervaloDemonstracao = setTimeout(async () => {
+
+    intervaloDemonstracao = null;
+
+    if (!demonstracaoAtiva) return;
+
+    await enviarDadosDemonstracao();
+
+    // Se foi pausada durante a gravação, não agenda outra amostra.
+    if (demonstracaoAtiva) agendarProximaAmostraDemonstracao();
+
+  }, CONFIG.intervaloSimulacao);
+
+}
+
+
 function iniciarDemonstracao() {
 
   if (demonstracaoAtiva) return;
@@ -1982,13 +1888,16 @@ function iniciarDemonstracao() {
 
   }
 
-  // Primeira amostra imediatamente; demais respeitam o intervalo configurado.
-  enviarDadosDemonstracao();
+  // Evita temporizadores duplicados caso o início seja acionado rapidamente.
+  if (intervaloDemonstracao !== null) {
+    clearTimeout(intervaloDemonstracao);
+    intervaloDemonstracao = null;
+  }
 
-  intervaloDemonstracao = setInterval(
-    enviarDadosDemonstracao,
-    CONFIG.intervaloSimulacao
-  );
+  // Envia uma amostra imediatamente; só agenda a próxima após a gravação terminar.
+  enviarDadosDemonstracao().finally(() => {
+    if (demonstracaoAtiva) agendarProximaAmostraDemonstracao();
+  });
 
   console.log("[DEMONSTRAÇÃO] Envio iniciado/retomado:", sessaoDemonstracao);
 
@@ -2004,7 +1913,7 @@ function pausarDemonstracao() {
   demonstracaoAtiva = false;
 
   if (intervaloDemonstracao !== null) {
-    clearInterval(intervaloDemonstracao);
+    clearTimeout(intervaloDemonstracao);
     intervaloDemonstracao = null;
   }
 
@@ -2013,7 +1922,7 @@ function pausarDemonstracao() {
 }
 
 
-// Sair da demonstração e voltar a acompanhar o caminho dos sensores físicos.
+// Encerrar a sessão demonstrativa sem mudar para dados físicos.
 function encerrarDemonstracao() {
 
   if (!demonstracaoAtiva && !sessaoDemonstracao && caminhoAtual === "leituras") return;
@@ -2021,7 +1930,7 @@ function encerrarDemonstracao() {
   demonstracaoAtiva = false;
 
   if (intervaloDemonstracao !== null) {
-    clearInterval(intervaloDemonstracao);
+    clearTimeout(intervaloDemonstracao);
     intervaloDemonstracao = null;
   }
 
@@ -2032,10 +1941,12 @@ function encerrarDemonstracao() {
   sessaoDemonstracao = null;
   referenciaOperacional = null;
   identificadorReferencia = null;
+  anomaliaPendentePorClique = null;
 
-  conectarFonteDados("leituras");
+  // Mesmo ao encerrar a sessão, esta versão permanece no caminho de teste.
+  conectarFonteDados("leituras_teste");
 
-  console.log("[DEMONSTRAÇÃO] Encerrada. Monitoramento físico retomado.");
+  console.log("[DEMONSTRAÇÃO] Encerrada. Fonte simulada mantida.");
 
 }
 
@@ -2060,7 +1971,7 @@ function alternarAnomalia(tipo) {
   if (!referenciaOperacional) {
 
     console.warn(
-      `[TESTE] Aguarde ${CONFIG.amostrasReferencia} leituras normais e a mensagem de referência operacional estabelecida.`
+      `[TESTE] Aguarde ${CONFIG.amostrasReferencia} leituras normais.`
     );
 
     return;
@@ -2093,6 +2004,7 @@ function restaurarAnomalias() {
 
   if (!demonstracaoAtiva) return;
 
+  anomaliaPendentePorClique = null;
 
   Object.keys(anomalias).forEach(tipo => {
 
@@ -2107,7 +2019,59 @@ function restaurarAnomalias() {
 
 
 // ============================================================================
-// 23. ATALHOS OCULTOS DE TECLADO
+// 23. INTERACAO DISCRETA NOS CARDS DE TELEMETRIA
+// ============================================================================
+// Clique no card/valor de cada sensor para alternar uma anomalia simulada.
+// A interação não adiciona botões, textos ou elementos visuais ao HTML.
+
+function solicitarAnomaliaPorClique(tipo) {
+  if (!demonstracaoAtiva) {
+    iniciarDemonstracao();
+  }
+
+  if (referenciaOperacional === null) {
+    anomaliaPendentePorClique = tipo;
+    console.log(
+      `[DEMONSTRAÇÃO] ${tipo}: aguardando a linha de base normal para ativar o desvio.`
+    );
+    return;
+  }
+
+  alternarAnomalia(tipo);
+}
+
+function configurarCliquesDiscretos() {
+  const sensores = [
+    { id: "val-temp", tipo: "temperatura" },
+    { id: "val-rpm", tipo: "rpm" },
+    { id: "val-corrente", tipo: "corrente" },
+    { id: "val-acel", tipo: "vibracao" }
+  ];
+
+  sensores.forEach(({ id, tipo }) => {
+    const valor = document.getElementById(id);
+    if (!valor) return;
+
+    // Tenta usar o card existente sem alterar a estrutura do site.
+    const card =
+      valor.closest("[data-sensor-card], .sensor-card, .metric-card, .metric, .card") ||
+      valor.parentElement?.parentElement ||
+      valor.parentElement;
+
+    if (!card || card.dataset.monimotorClickBound === "true") return;
+
+    card.dataset.monimotorClickBound = "true";
+
+    // Sem mudar aparência, cursor, texto ou estrutura visual do dashboard.
+    card.addEventListener("click", () => {
+      solicitarAnomaliaPorClique(tipo);
+    });
+  });
+}
+
+
+// ============================================================================
+// 24. ATALHOS OCULTOS DE TECLADO
 // ============================================================================
 // ESPAÇO: iniciar / pausar / retomar a demonstração.
 // ALT + SHIFT + 1: anomalia de temperatura.
@@ -2115,54 +2079,55 @@ function restaurarAnomalias() {
 // ALT + SHIFT + 3: anomalia de corrente.
 // ALT + SHIFT + 4: anomalia de vibração.
 // ALT + SHIFT + 0: restaurar os quatro sensores à condição normal.
-// ALT + SHIFT + M: sair da demonstração e voltar à fonte física /leituras.
+// ALT + SHIFT + M: encerrar a sessão demonstrativa, mantendo a fonte simulada.
 // Nenhum controle ou aviso de simulação é criado na interface.
 
 document.addEventListener("keydown", event => {
 
-  if (event.repeat || event.ctrlKey || event.metaKey) return;
+  if (event.repeat) return;
+  if (event.ctrlKey || event.metaKey) return;
 
   const elemento = event.target;
-  const campoEditavel = elemento && elemento.closest &&
-    elemento.closest("input, textarea, select, [contenteditable='true']");
-
+  const campoEditavel = elemento && elemento.closest && elemento.closest(
+    "input, textarea, select, [contenteditable='true']"
+  );
   if (campoEditavel) return;
 
-  // Espaço inicia/pausa mesmo que um botão ou link esteja focado.
+  // ESPAÇO inicia/pausa mesmo quando o foco está em um botão do dashboard.
   if (event.code === "Space" && !event.altKey && !event.shiftKey) {
     event.preventDefault();
-    demonstracaoAtiva ? pausarDemonstracao() : iniciarDemonstracao();
+    if (demonstracaoAtiva) pausarDemonstracao();
+    else iniciarDemonstracao();
     return;
   }
 
   if (!event.altKey || !event.shiftKey) return;
 
-  const mapaAnomalias = {
-    Digit1: "temperatura",
-    Numpad1: "temperatura",
-    Digit2: "rpm",
-    Numpad2: "rpm",
-    Digit3: "corrente",
-    Numpad3: "corrente",
-    Digit4: "vibracao",
-    Numpad4: "vibracao"
-  };
+  // event.code não depende do caractere produzido pelo layout ABNT2.
+  const codigo = event.code;
 
-  if (event.code === "KeyM") {
+  if (codigo === "KeyM") {
     event.preventDefault();
-    encerrarDemonstracao();
+    if (demonstracaoAtiva || sessaoDemonstracao) encerrarDemonstracao();
     return;
   }
 
   if (!demonstracaoAtiva) return;
 
-  if (Object.prototype.hasOwnProperty.call(mapaAnomalias, event.code)) {
+  const mapaAnomalias = {
+    Digit1: "temperatura", Numpad1: "temperatura",
+    Digit2: "rpm",         Numpad2: "rpm",
+    Digit3: "corrente",    Numpad3: "corrente",
+    Digit4: "vibracao",    Numpad4: "vibracao"
+  };
+
+  if (Object.prototype.hasOwnProperty.call(mapaAnomalias, codigo)) {
     event.preventDefault();
-    alternarAnomalia(mapaAnomalias[event.code]);
+    alternarAnomalia(mapaAnomalias[codigo]);
     return;
   }
 
-  if (event.code === "Digit0" || event.code === "Numpad0") {
+  if (codigo === "Digit0" || codigo === "Numpad0") {
     event.preventDefault();
     restaurarAnomalias();
   }
@@ -2211,11 +2176,14 @@ function iniciarMoniMotor() {
 
   monitorarStatusConexao();
 
-  // Começa acompanhando os dados físicos.
+  configurarCliquesDiscretos();
 
-  conectarFonteDados("leituras");
+  // Esta versão é exclusivamente demonstrativa: usa apenas dados simulados.
+  // A geração começa automaticamente e grava em /leituras_teste.
+  iniciarDemonstracao();
 
 }
 
 
 iniciarMoniMotor();
+
